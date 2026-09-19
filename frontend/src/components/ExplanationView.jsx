@@ -4,6 +4,13 @@ import { DisclaimerBanner } from "./DisclaimerBanner";
 import { ReportChat } from "./ReportChat";
 
 export function ExplanationView({ results, reportId, disclaimer, onExportPdf, onViewTrends, onRestart }) {
+  const aboveCount = results.filter((result) => result.flag === "H").length;
+  const belowCount = results.filter((result) => result.flag === "L").length;
+
+  function jumpToResult(result) {
+    document.getElementById(`result-${result.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   return (
     <div className="view explanation-view">
       <div className="view-header compact">
@@ -30,7 +37,7 @@ export function ExplanationView({ results, reportId, disclaimer, onExportPdf, on
           const flagClass = isHigh ? "high" : isLow ? "low" : "normal";
 
               return (
-            <article className="result-card" key={result.id}>
+              <article className="result-card" id={`result-${result.id}`} key={result.id}>
               <div className="result-card-top">
                 <span className="result-title">
                   {result.raw_test_name}
@@ -84,7 +91,34 @@ export function ExplanationView({ results, reportId, disclaimer, onExportPdf, on
             </button>
           </div>
         </div>
-        <aside className="summary-chat-rail"><ReportChat reportId={reportId} className="side-chat" /></aside>
+        <aside className="summary-chat-rail">
+          <div className="summary-side-stack">
+            <section className="side-card takeaways-card">
+              <div className="side-card-label">At a glance</div>
+              <h3>Key takeaways</h3>
+              <p>{results.length} confirmed measurements are available for review.</p>
+              <div className="takeaway-stats"><span><strong>{aboveCount}</strong> above range</span><span><strong>{belowCount}</strong> below range</span></div>
+              <small>These labels compare only with ranges printed on the report.</small>
+            </section>
+
+            <section className="side-card">
+              <div className="side-card-label">Navigate</div>
+              <h3>Quick jump</h3>
+              <nav className="quick-jump" aria-label="Jump to report result">
+                {results.map((result) => <button key={result.id} onClick={() => jumpToResult(result)}>{result.raw_test_name}<ArrowUpRight size={13} /></button>)}
+              </nav>
+            </section>
+
+            <section className="side-card action-card">
+              <div className="side-card-label">Next step</div>
+              <h3>Bring this to your clinician</h3>
+              <p>Use the export or write down questions about any result you want to discuss with an approved healthcare professional.</p>
+              <button className="side-action-button" onClick={onExportPdf}><Download size={14} /> Download summary</button>
+            </section>
+
+            <ReportChat reportId={reportId} className="side-chat" />
+          </div>
+        </aside>
       </div>
     </div>
   );
