@@ -1,5 +1,4 @@
-from datetime import date, datetime
-from pathlib import Path
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 import re
@@ -7,6 +6,8 @@ import re
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+from .extraction import ExtractionError, process_report
 
 
 DISCLAIMER = "Prototype education only. This summary is not a diagnosis. Discuss your results with a qualified clinician."
@@ -42,55 +43,6 @@ class Confirmation(BaseModel):
     results: list[TestResult]
 
 
-def sample_results() -> list[dict[str, Any]]:
-    rows = [
-        ("Hemoglobin", 13.8, "g/dL", 12.0, 15.5, "normal", 0.97),
-        ("Total Cholesterol", 214, "mg/dL", 0, 200, "H", 0.94),
-        ("TSH", 2.4, "mIU/L", 0.4, 4.0, "normal", 0.88),
-        ("ALT", 31, "U/L", 7, 56, "normal", 0.72),
-    ]
-    return [
-        {
-            "id": f"result_{index}",
-            "raw_test_name": name,
-            "value": value,
-            "unit": unit,
-            "reference_range_low": low,
-            "reference_range_high": high,
-            "flag": flag,
-            "report_date": "2026-08-14",
-            "extraction_confidence": confidence,
-            "user_corrected": False,
-            "explanation_text": None,
-        }
-        for index, (name, value, unit, low, high, flag, confidence) in enumerate(rows, 1)
-    ]
-
-
-def extract_results(raw_text: str) -> list[dict[str, Any]]:
-    matches: list[dict[str, Any]] = []
-    pattern = re.compile(
-        r"(?P<name>[A-Za-z][A-Za-z ]{2,})\s+(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>[A-Za-z/%]+)"
-    )
-    for index, match in enumerate(pattern.finditer(raw_text), 1):
-        matches.append(
-            {
-                "id": f"result_{index}",
-                "raw_test_name": match.group("name").strip(),
-                "value": float(match.group("value")),
-                "unit": match.group("unit"),
-                "reference_range_low": None,
-                "reference_range_high": None,
-                "flag": None,
-                "report_date": date.today().isoformat(),
-                "extraction_confidence": 0.62,
-                "user_corrected": False,
-                "explanation_text": None,
-            }
-        )
-    return matches or sample_results()
-
-
 def safe_explanation(result: dict[str, Any]) -> str:
     name = result["raw_test_name"]
     value = result.get("value")
@@ -124,15 +76,20 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
     if len(payload) > MAX_BYTES:
         raise HTTPException(413, "Files must be 15 MB or smaller.")
     report_id = f"r_{uuid4().hex[:8]}"
-    raw_text = payload.decode("utf-8", errors="ignore") if file.content_type != "application/pdf" else ""
-    results = extract_results(raw_text)
+    try:
+        processed = process_report(payload, file.content_type, file.filename)
+    except (ExtractionError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
     reports[report_id] = {
         "id": report_id,
         "filename": file.filename or "untitled-report",
-        "source_type": "pdf_text" if file.content_type == "application/pdf" else "image",
+        "source_type": processed["source_type"],
+        "ocr_confidence": processed["ocr_confidence"],
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "results": results,
+        "results": processed["results"],
     }
     return {"report_id": report_id, "status": "processing"}
 
