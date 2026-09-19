@@ -143,3 +143,29 @@ def test_pdf_text_pipeline_extracts_sample_rows():
 
     assert len(processed["results"]) == 10
     assert processed["source_type"] == "pdf_text"
+
+
+def test_columnar_pdf_text_groups_cells_after_test_name():
+    text = """Report Date: 2026-08-14
+Test Name
+Result
+Unit
+Reference Range
+Flag
+Hemoglobin
+13.4
+g/dL
+12.0 - 15.5
+Normal
+Free T4
+1.18
+ng/dL
+0.80 - 1.80
+Normal
+"""
+
+    results = extract_candidates(text)
+
+    assert [result["raw_test_name"] for result in results] == ["Hemoglobin", "Free T4"]
+    assert results[0]["value"] == 13.4
+    assert results[1]["value"] == 1.18

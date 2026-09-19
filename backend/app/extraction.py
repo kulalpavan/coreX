@@ -152,6 +152,30 @@ def _parse_line(line: str, report_date: str | None, ocr_confidence: float | None
     return normalize_result(fields)
 
 
+def _parse_columnar_rows(raw_text: str, report_date: str | None, ocr_confidence: float | None) -> list[dict[str, Any]]:
+    """Parse PDFs whose table extractor places each cell on its own line."""
+    lines = [" ".join(line.split()).strip(" |:") for line in raw_text.splitlines()]
+    results: list[dict[str, Any]] = []
+    index = 0
+    while index < len(lines):
+        if _known_test_prefix(lines[index]) is None:
+            index += 1
+            continue
+        row_parts = [lines[index]]
+        lookahead = index + 1
+        while lookahead < len(lines) and len(row_parts) < 6:
+            if _known_test_prefix(lines[lookahead]) is not None:
+                break
+            if lines[lookahead]:
+                row_parts.append(lines[lookahead])
+            lookahead += 1
+        candidate = _parse_line(" ".join(row_parts), report_date, ocr_confidence)
+        if candidate:
+            results.append(candidate)
+        index = max(index + 1, lookahead)
+    return results
+
+
 def extract_candidates(raw_text: str, ocr_confidence: float | None = None) -> list[dict[str, Any]]:
     report_date = _report_date(raw_text)
     candidates: list[dict[str, Any]] = []
@@ -159,6 +183,8 @@ def extract_candidates(raw_text: str, ocr_confidence: float | None = None) -> li
         candidate = _parse_line(line, report_date, ocr_confidence)
         if candidate and not any(item["raw_test_name"] == candidate["raw_test_name"] for item in candidates):
             candidates.append(candidate)
+    if not candidates:
+        candidates = _parse_columnar_rows(raw_text, report_date, ocr_confidence)
     if not candidates:
         raise ExtractionError("No recognizable laboratory results were found in the document.")
     for index, candidate in enumerate(candidates, 1):
