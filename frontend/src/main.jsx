@@ -242,7 +242,6 @@ function App() {
               reportDate={reportDate}
               sourceText={sourceText}
               results={results}
-              reportId={reportId}
               onUpdate={handleUpdateResult}
               onAddRow={handleAddRow}
               onDeleteRow={handleDeleteRow}
@@ -254,6 +253,7 @@ function App() {
           {screen === "explanation" && (
             <ExplanationView
               results={results}
+              reportId={reportId}
               disclaimer={disclaimer}
               onExportPdf={handleExportPdf}
               onViewTrends={() => setScreen("trends")}
