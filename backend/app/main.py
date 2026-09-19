@@ -172,7 +172,12 @@ def get_source_file(report_id: str) -> FileResponse:
     if not source_path.is_file():
         raise HTTPException(404, "The original report file is no longer available.")
     media_type = report.get("content_type", "application/octet-stream")
-    return FileResponse(source_path, media_type=media_type, filename=report["filename"])
+    return FileResponse(
+        source_path,
+        media_type=media_type,
+        filename=report["filename"],
+        content_disposition_type="inline",
+    )
 
 
 @app.post("/api/reports/{report_id}/confirm")
