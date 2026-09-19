@@ -22,7 +22,7 @@ function displayFileName(fileName) {
 }
 
 export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
-  const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8).length;
+  const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8 || r.review_required).length;
   const [previewScale, setPreviewScale] = useState(1);
 
   return (
@@ -84,7 +84,7 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
           </thead>
           <tbody>
             {results.map((result) => {
-              const isLowConf = result.extraction_confidence < 0.8;
+              const isLowConf = result.extraction_confidence < 0.8 || result.review_required;
               return (
                 <tr key={result.id} className={isLowConf ? "row-low-confidence" : ""}>
                   <td>
@@ -162,7 +162,7 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
                       <span className="confidence-bar">
                         <i style={{ width: `${Math.min(100, (result.extraction_confidence || 0.5) * 100)}%` }} />
                       </span>
-                      {confidenceLabel(result.extraction_confidence ?? 0.5)}
+                      {result.extraction_conflict ? "Conflict: review required" : confidenceLabel(result.extraction_confidence ?? 0.5)}
                     </span>
                   </td>
                   <td>

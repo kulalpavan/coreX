@@ -56,7 +56,10 @@ def _extract_pdf_text(payload: bytes) -> str:
     except ImportError as exc:
         raise RuntimeError("PDF processing is unavailable because PyMuPDF is not installed.") from exc
 
-    document = fitz.open(stream=payload, filetype="pdf")
+    try:
+        document = fitz.open(stream=payload, filetype="pdf")
+    except Exception as exc:
+        raise ValueError("We couldn't read this PDF file. Please upload another copy.") from exc
     try:
         return "\n".join(page.get_text("text") for page in document).strip()
     finally:

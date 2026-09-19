@@ -16,6 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .explanations import explain_result
 from .extraction import ExtractionError, process_report
 from .guardrail import guardrail
 from .ingestion import get_ocr_status, get_pdf_text_status
@@ -86,20 +87,6 @@ class Confirmation(BaseModel):
 def canonicalize_test_name(raw_name: str) -> str:
     normalized = " ".join(raw_name.casefold().split())
     return canonical_test_id(normalized) or normalized.replace(" ", "_")
-def safe_explanation(result: dict[str, Any]) -> str:
-    name = result["raw_test_name"]
-    value = result.get("value")
-    unit = result.get("unit") or ""
-    low = result.get("reference_range_low")
-    high = result.get("reference_range_high")
-    if low is not None and high is not None and value is not None:
-        position = "within" if low <= value <= high else "above" if value > high else "below"
-        range_text = f"the reported range of {low:g}–{high:g} {unit}".strip()
-        return f"{name} is a measurement recorded as {value:g} {unit}. This is {position} {range_text}. Discuss this result with your clinician for personal context."
-    value_text = f"{value:g}" if isinstance(value, (int, float)) else "not available"
-    return f"{name} is recorded as {value_text} {unit}. The report does not include enough range information for a comparison. Discuss this result with your clinician for personal context."
-
-
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     ocr = get_ocr_status()
@@ -212,7 +199,7 @@ def confirm_report(report_id: str, body: Confirmation) -> dict[str, Any]:
         for index, item in enumerate(body.results, 1)
     ]
     for result in report["results"]:
-        result["explanation_text"] = guardrail(safe_explanation(result))
+        result["explanation_text"] = guardrail(explain_result(result))
     report["status"] = "confirmed"
     reports.save(report)
     return {"report_id": report_id, "status": report["status"], "results": report["results"], "disclaimer": DISCLAIMER}
@@ -319,7 +306,7 @@ def export_report(report_id: str) -> StreamingResponse:
     story.append(Spacer(1, 0.25 * inch))
     story.append(Paragraph("Plain-language explanations", styles["Heading2"]))
     for result in report["results"]:
-        story.append(Paragraph(f"<b>{result['raw_test_name']}</b>: {result.get('explanation_text') or safe_explanation(result)}", styles["BodyText"]))
+        story.append(Paragraph(f"<b>{result['raw_test_name']}</b>: {result.get('explanation_text') or explain_result(result)}", styles["BodyText"]))
         story.append(Spacer(1, 0.1 * inch))
 
     output = BytesIO()

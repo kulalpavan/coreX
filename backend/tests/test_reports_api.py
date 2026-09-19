@@ -132,3 +132,13 @@ def test_delete_data_is_scoped_to_requested_patient() -> None:
     assert response.status_code == 200
     assert own_report not in reports
     assert other_report in reports
+
+
+def test_corrupted_pdf_returns_actionable_error() -> None:
+    response = client.post(
+        "/api/reports/upload",
+        files={"file": ("corrupt.pdf", b"not a pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert "couldn't read" in response.json()["detail"].lower()
