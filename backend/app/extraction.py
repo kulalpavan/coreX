@@ -5,13 +5,15 @@ import re
 from typing import Any
 
 from .ingestion import ingest_document
-from .normalization import canonical_test_id, normalize_result
+from .normalization import TEST_DICTIONARY, canonical_test_id, normalize_result
 
 
-NUMBER = r"-?\d+(?:[.,]\d+)?"
+NUMBER = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
 DATE_PATTERN = re.compile(r"\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b")
 VALUE_PATTERN = re.compile(rf"(?P<value>{NUMBER})")
 RANGE_PATTERN = re.compile(rf"(?P<low>{NUMBER})\s*(?:-|–|to)\s*(?P<high>{NUMBER})", re.I)
+UPPER_RANGE_PATTERN = re.compile(rf"(?:<|<=)\s*(?P<high>{NUMBER})")
+LOWER_RANGE_PATTERN = re.compile(rf"(?:>|>=)\s*(?P<low>{NUMBER})")
 UNIT_PATTERN = re.compile(r"^[A-Za-zμµ/%^0-9]+(?:/[A-Za-zμµ0-9]+)?$")
 FLAG_PATTERN = re.compile(r"\b(?P<flag>H|L|High|Low|Normal)\b", re.I)
 
@@ -33,7 +35,36 @@ def process_report(payload: bytes, content_type: str | None, filename: str | Non
 
 
 def _number(value: str) -> float:
+    if "," in value and "." not in value and len(value.rsplit(",", 1)[-1]) == 3:
+        return float(value.replace(",", ""))
     return float(value.replace(",", "."))
+
+
+def _known_test_prefix(line: str) -> tuple[str, str] | None:
+    normalized = " ".join(line.replace("|", " ").split())
+    names = sorted(
+        (synonym for definition in TEST_DICTIONARY for synonym in definition.synonyms),
+        key=len,
+        reverse=True,
+    )
+    for name in names:
+        match = re.match(rf"^{re.escape(name)}(?=\s|$)", normalized, re.I)
+        if match:
+            return normalized[: match.end()].strip(), normalized[match.end() :].strip()
+    return None
+
+
+def _range_from_text(text: str) -> tuple[float | None, float | None, str]:
+    match = RANGE_PATTERN.search(text)
+    if match:
+        return _number(match.group("low")), _number(match.group("high")), RANGE_PATTERN.sub(" ", text, count=1)
+    match = UPPER_RANGE_PATTERN.search(text)
+    if match:
+        return None, _number(match.group("high")), UPPER_RANGE_PATTERN.sub(" ", text, count=1)
+    match = LOWER_RANGE_PATTERN.search(text)
+    if match:
+        return _number(match.group("low")), None, LOWER_RANGE_PATTERN.sub(" ", text, count=1)
+    return None, None, text
 
 
 def _report_date(raw_text: str) -> str | None:
@@ -67,50 +98,32 @@ def _confidence(fields: dict[str, Any], line: str, ocr_confidence: float | None)
 
 def _parse_line(line: str, report_date: str | None, ocr_confidence: float | None) -> dict[str, Any] | None:
     line = " ".join(line.split()).strip(" |:")
+    known_prefix = _known_test_prefix(line)
+    if known_prefix is None:
+        return None
+    raw_name, remainder = known_prefix
+    remainder = remainder.strip(" |:")
     missing_value_match = re.match(r"^(?P<name>[A-Za-z][A-Za-z0-9 /()%.-]{1,40}?)\s+(?:--|—|N/?A)\s+(?P<remainder>.+)$", line, re.I)
     if missing_value_match:
-        raw_name = missing_value_match.group("name").strip()
-        if canonical_test_id(raw_name):
-            remainder = missing_value_match.group("remainder")
-            range_match = RANGE_PATTERN.search(remainder)
-            low = _number(range_match.group("low")) if range_match else None
-            high = _number(range_match.group("high")) if range_match else None
-            without_range = RANGE_PATTERN.sub(" ", remainder) if range_match else remainder
-            unit_candidates = [token.strip("()[]") for token in without_range.split() if UNIT_PATTERN.fullmatch(token.strip("()[]"))]
-            fields = {
-                "raw_test_name": raw_name,
-                "value": None,
-                "unit": unit_candidates[0] if unit_candidates else None,
-                "reference_range_low": low,
-                "reference_range_high": high,
-                "flag": None,
-                "report_date": report_date,
-            }
-            confidence, field_confidence = _confidence(fields, line, ocr_confidence)
-            fields.update({"extraction_confidence": round(confidence * 0.5, 3), "field_confidence": field_confidence, "user_corrected": False})
-            return normalize_result(fields)
-    value_match = VALUE_PATTERN.search(line)
+        remainder = missing_value_match.group("remainder")
+        low, high, without_range = _range_from_text(remainder)
+        unit_candidates = [token.strip("()[]") for token in without_range.split() if UNIT_PATTERN.fullmatch(token.strip("()[]"))]
+        fields = {"raw_test_name": raw_name, "value": None, "unit": unit_candidates[0] if unit_candidates else None, "reference_range_low": low, "reference_range_high": high, "flag": None, "report_date": report_date}
+        confidence, field_confidence = _confidence(fields, line, ocr_confidence)
+        fields.update({"extraction_confidence": round(confidence * 0.5, 3), "field_confidence": field_confidence, "user_corrected": False})
+        return normalize_result(fields)
+    value_match = VALUE_PATTERN.match(remainder)
     if not value_match:
         return None
-
-    raw_name = line[: value_match.start()].strip(" -:|\t")
-    if len(raw_name) < 2 or not re.search(r"[A-Za-z]", raw_name):
-        return None
-    if DATE_PATTERN.search(raw_name) or raw_name.casefold().strip() in {"date", "report date", "collection date"}:
-        return None
-
     value = _number(value_match.group("value"))
-    remainder = line[value_match.end() :].strip(" |,;")
-    range_match = RANGE_PATTERN.search(remainder)
-    low = _number(range_match.group("low")) if range_match else None
-    high = _number(range_match.group("high")) if range_match else None
+    remainder = remainder[value_match.end() :].strip(" |,;")
+    low, high, without_range = _range_from_text(remainder)
     if low is not None and high is not None and low > high:
         low, high = high, low
         range_suspicious = True
     else:
         range_suspicious = False
 
-    without_range = RANGE_PATTERN.sub(" ", remainder) if range_match else remainder
     flag_match = FLAG_PATTERN.search(without_range)
     flag = flag_match.group("flag") if flag_match else None
     if flag:

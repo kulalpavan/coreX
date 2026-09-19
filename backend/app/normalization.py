@@ -12,11 +12,14 @@ class TestDefinition:
 
 TEST_DICTIONARY = (
     TestDefinition("hemoglobin", "g/dL", ("hb", "hgb", "haemoglobin", "hemoglobin")),
+    TestDefinition("white_blood_cell_count", "cells/µL", ("white blood cell count", "white blood cells", "wbc")),
+    TestDefinition("platelet_count", "cells/µL", ("platelet count", "platelets", "plt")),
     TestDefinition("total_cholesterol", "mg/dL", ("total chol", "total cholesterol", "cholesterol")),
     TestDefinition("ldl", "mg/dL", ("ldl", "ldl cholesterol")),
     TestDefinition("hdl", "mg/dL", ("hdl", "hdl cholesterol")),
     TestDefinition("triglycerides", "mg/dL", ("tg", "triglycerides", "triglyceride")),
     TestDefinition("tsh", "mIU/L", ("tsh", "thyroid stimulating hormone")),
+    TestDefinition("free_t4", "ng/dL", ("free t4", "ft4", "free thyroxine")),
     TestDefinition("alt", "U/L", ("alt", "sgpt")),
     TestDefinition("ast", "U/L", ("ast", "sgot")),
     TestDefinition("creatinine", "mg/dL", ("creatinine", "serum creatinine")),
