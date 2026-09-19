@@ -357,6 +357,15 @@ h2 {
   color: #718079;
   font-family: "DM Mono", monospace;
 }
+.file-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .source-preview {
   border: 1px solid #d9d7d1;
   background: #fffdfa;

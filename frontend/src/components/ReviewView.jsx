@@ -8,6 +8,19 @@ function confidenceLabel(value) {
   return "Needs review";
 }
 
+function displayFileName(fileName) {
+  if (!fileName) return "uploaded-report.pdf";
+  const extensionStart = fileName.lastIndexOf(".");
+  const extension = extensionStart >= 0 ? fileName.slice(extensionStart).toLowerCase() : "";
+  const baseName = extensionStart >= 0 ? fileName.slice(0, extensionStart) : fileName;
+  const readableName = baseName
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${readableName || "uploaded-report"}${extension}`;
+}
+
 export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
   const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8).length;
 
@@ -25,9 +38,9 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
       </div>
 
       <div className="review-meta">
-        <span>
+        <span className="file-label" title={fileName || "uploaded-report.pdf"}>
           <FileText size={15} />
-          {fileName || "uploaded-report.pdf"}
+          {displayFileName(fileName)}
         </span>
         <span>{results.length} values found</span>
       </div>
