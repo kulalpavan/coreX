@@ -6,9 +6,6 @@ import os
 import shutil
 
 
-MIN_OCR_CONFIDENCE = 0.25
-
-
 def _configure_tesseract(pytesseract) -> None:
     executable = shutil.which("tesseract")
     if not executable:
@@ -81,37 +78,74 @@ def _extract_pdf_text(payload: bytes) -> str:
         document.close()
 
 
-def _ocr_image(image) -> tuple[str, float | None]:
+def evaluate_ocr_quality(text: str, confidence: float | None) -> float:
+    if not text.strip() or confidence is None:
+        return 0.0
+        
+    score = confidence * 0.4
+    
+    length = len(text)
+    if length > 500:
+        score += 0.1
+    elif length > 100:
+        score += 0.05
+        
+    lines = text.splitlines()
+    line_count = len(lines)
+    if line_count > 10:
+        score += 0.1
+    elif line_count > 3:
+        score += 0.05
+        
+    word_count = len(text.split())
+    if word_count > 50:
+        score += 0.1
+        
+    try:
+        from .extraction import extract_candidates
+        candidates = extract_candidates(text, confidence)
+        if len(candidates) > 2:
+            score += 0.3
+        elif len(candidates) > 0:
+            score += 0.15
+    except Exception:
+        pass
+        
+    return min(1.0, score)
+
+
+def _ocr_image_pass(image, strategy="fast") -> tuple[str, float | None]:
     try:
         import pytesseract
     except ImportError as exc:
-        raise RuntimeError("OCR is unavailable because pytesseract is not installed.") from exc
+        raise RuntimeError("Image OCR is currently unavailable. Please configure Tesseract or use a text-based PDF.") from exc
 
     try:
         from PIL import Image, ImageEnhance
     except ImportError as exc:
-        raise RuntimeError("OCR is unavailable because Pillow is not installed.") from exc
+        raise RuntimeError("Image OCR is currently unavailable. Please configure Tesseract or use a text-based PDF.") from exc
 
     _configure_tesseract(pytesseract)
     
-    # Pre-process for low quality images
     image = image.convert("L")
     
-    # 1. Removed expensive upscaling that was causing major slowdowns
-    
-    # 2. Increase contrast moderately
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(1.5)
-    
-    # 3. Increase sharpness
-    enhancer = ImageEnhance.Sharpness(image)
-    image = enhancer.enhance(1.5)
-    
+    if strategy == "heavy":
+        image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(2.0)
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(2.0)
+    else:
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(1.5)
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(1.5)
+        
     try:
         data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
     except pytesseract.TesseractNotFoundError as exc:
-        raise RuntimeError("OCR is unavailable because the Tesseract executable is not installed or is not on PATH.") from exc
-    
+        raise RuntimeError("Image OCR is currently unavailable. Please configure Tesseract or use a text-based PDF.") from exc
+        
     lines = []
     current_line = []
     last_tuple = None
@@ -141,11 +175,26 @@ def _ocr_image(image) -> tuple[str, float | None]:
     return text_out, confidence
 
 
+def _ocr_image(image) -> tuple[str, float | None]:
+    text_a, conf_a = _ocr_image_pass(image, strategy="fast")
+    score_a = evaluate_ocr_quality(text_a, conf_a)
+    
+    if score_a >= 0.4:
+        return text_a, conf_a
+        
+    text_b, conf_b = _ocr_image_pass(image, strategy="heavy")
+    score_b = evaluate_ocr_quality(text_b, conf_b)
+    
+    if score_b > score_a:
+        return text_b, conf_b
+    return text_a, conf_a
+
+
 def _ocr_payload(payload: bytes, source_type: str) -> tuple[str, float | None]:
     try:
         from PIL import Image
     except ImportError as exc:
-        raise RuntimeError("OCR is unavailable because Pillow is not installed.") from exc
+        raise RuntimeError("Image OCR is currently unavailable. Please configure Tesseract or use a text-based PDF.") from exc
 
     if source_type == "image":
         return _ocr_image(Image.open(BytesIO(payload)))
@@ -181,14 +230,20 @@ def ingest_document(payload: bytes, content_type: str | None, filename: str | No
             return IngestionResult(text, "pdf_text", None)
         text, confidence = _ocr_payload(payload, "pdf_scanned")
         if not text:
-            return IngestionResult("", "pdf_scanned", confidence, "The PDF could not be read.")
-        if confidence is not None and confidence < MIN_OCR_CONFIDENCE:
-            return IngestionResult("", "pdf_scanned", confidence, "The scanned PDF was too unclear to read confidently. Please upload a clearer scan.")
+            return IngestionResult("", "pdf_scanned", confidence, "We couldn't reliably read enough text from this document. Please upload a clearer copy.")
+        
+        score = evaluate_ocr_quality(text, confidence)
+        if score < 0.2:
+            return IngestionResult("", "pdf_scanned", confidence, "We couldn't reliably read enough text from this image. Please upload a clearer photo with the entire report visible, good lighting, and minimal blur.")
+            
         return IngestionResult(text, "pdf_scanned", confidence)
 
     text, confidence = _ocr_payload(payload, "image")
     if not text:
-        return IngestionResult("", "image", confidence, "The image could not be read.")
-    if confidence is not None and confidence < MIN_OCR_CONFIDENCE:
-        return IngestionResult("", "image", confidence, "The image was too unclear to read confidently. Please upload a clearer scan.")
+        return IngestionResult("", "image", confidence, "We couldn't reliably read enough text from this image. Please upload a clearer photo with the entire report visible, good lighting, and minimal blur.")
+        
+    score = evaluate_ocr_quality(text, confidence)
+    if score < 0.2:
+        return IngestionResult("", "image", confidence, "We couldn't reliably read enough text from this image. Please upload a clearer photo with the entire report visible, good lighting, and minimal blur.")
+        
     return IngestionResult(text, "image", confidence)

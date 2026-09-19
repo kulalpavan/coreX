@@ -122,11 +122,11 @@ export async function getExplanations(reportId) {
   return response.json();
 }
 
-export async function askReportQuestion(reportId, question) {
+export async function askReportQuestion(reportId, question, history = []) {
   const response = await fetch(`${API_URL}/api/reports/${reportId}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, history }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.detail || "Could not ask about this report.");

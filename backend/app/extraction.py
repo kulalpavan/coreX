@@ -11,12 +11,21 @@ from .normalization import TEST_DICTIONARY, canonical_test_id, normalize_result
 NUMBER = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
 DATE_PATTERN = re.compile(r"\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b")
 VALUE_PATTERN = re.compile(rf"(?P<value>{NUMBER})")
-RANGE_PATTERN = re.compile(rf"(?P<low>{NUMBER})\s*(?:-|–|to)\s*(?P<high>{NUMBER})", re.I)
+# Tolerate spaces, hyphens, equals, tildes between ranges
+RANGE_PATTERN = re.compile(rf"(?P<low>{NUMBER})\s*[-=~to]+\s*(?P<high>{NUMBER})", re.I)
 UPPER_RANGE_PATTERN = re.compile(rf"(?:<|<=)\s*(?P<high>{NUMBER})")
 LOWER_RANGE_PATTERN = re.compile(rf"(?:>|>=)\s*(?P<low>{NUMBER})")
-UNIT_PATTERN = re.compile(r"^[A-Za-zμµ/%^0-9]+(?:/[A-Za-zμµ0-9]+)?$")
+# Tolerate OCR artifacts in units like [ub, lakh, million, etc.
+UNIT_PATTERN = re.compile(r"^[A-Za-zIA/%^0-9\[\].]+(?:/[A-Za-zIA0-9.]+)?$")
 FLAG_PATTERN = re.compile(r"\b(?P<flag>H|L|High|Low|Normal)\b", re.I)
 
+# Generic Row Regex for Strategy 2
+# matches: [Test Name] [Value] [Remainder...]
+GENERIC_ROW_PATTERN = re.compile(
+    r"^(?P<name>[A-Za-z][A-Za-z0-9 \-()/.]{2,40}?)\s+"
+    rf"(?P<value>{NUMBER})\s+"
+    r"(?P<remainder>.+)$"
+)
 
 class ExtractionError(ValueError):
     """Raised when a document has no safely extractable candidate rows."""
@@ -29,14 +38,28 @@ def process_report(payload: bytes, content_type: str | None, filename: str | Non
     from .extraction_adapter import extract_report_results_with_metadata
 
     extraction_run = extract_report_results_with_metadata(ingestion.text, ingestion.ocr_confidence)
+    
+    # Calculate status and review counts based on extracted results
+    results = extraction_run.results
+    rows_extracted = len(results)
+    rows_needing_review = sum(1 for r in results if r.get("extraction_confidence", 1.0) < 0.6)
+    status = "SUCCESS"
+    if rows_extracted == 0:
+        status = "FAILURE"
+    elif rows_needing_review > 0:
+        status = "PARTIAL_SUCCESS"
+
     return {
         "raw_text": ingestion.text,
-        "results": extraction_run.results,
+        "results": results,
         "extraction_provider": extraction_run.provider,
         "fallback_used": extraction_run.fallback_used,
         "fallback_reason": extraction_run.fallback_reason,
         "source_type": ingestion.source_type,
         "ocr_confidence": ingestion.ocr_confidence,
+        "status": status,
+        "rows_extracted": rows_extracted,
+        "rows_needing_review": rows_needing_review
     }
 
 
@@ -103,40 +126,27 @@ def _confidence(fields: dict[str, Any], line: str, ocr_confidence: float | None)
     return round(max(0.0, min(1.0, confidence)), 3), {key: round(value, 3) for key, value in scores.items()}
 
 
-def _parse_line(line: str, report_date: str | None, ocr_confidence: float | None) -> dict[str, Any] | None:
-    line = " ".join(line.split()).strip(" |:")
-    known_prefix = _known_test_prefix(line)
-    if known_prefix is None:
-        return None
-    raw_name, remainder = known_prefix
-    remainder = remainder.strip(" |:")
-    missing_value_match = re.match(r"^(?P<name>[A-Za-z][A-Za-z0-9 /()%.-]{1,40}?)\s+(?:--|—|N/?A)\s+(?P<remainder>.+)$", line, re.I)
-    if missing_value_match:
-        remainder = missing_value_match.group("remainder")
-        low, high, without_range = _range_from_text(remainder)
-        unit_candidates = [token.strip("()[]") for token in without_range.split() if UNIT_PATTERN.fullmatch(token.strip("()[]"))]
-        fields = {"raw_test_name": raw_name, "value": None, "unit": unit_candidates[0] if unit_candidates else None, "reference_range_low": low, "reference_range_high": high, "flag": None, "report_date": report_date}
-        confidence, field_confidence = _confidence(fields, line, ocr_confidence)
-        fields.update({"extraction_confidence": round(confidence * 0.5, 3), "field_confidence": field_confidence, "user_corrected": False})
-        return normalize_result(fields)
-    value_match = VALUE_PATTERN.match(remainder)
-    if not value_match:
-        return None
-    value = _number(value_match.group("value"))
-    remainder = remainder[value_match.end() :].strip(" |,;")
+def _build_result(raw_name: str, value: float | None, value_str: str | None, remainder: str, line: str, report_date: str | None, ocr_confidence: float | None, strategy: int) -> dict[str, Any]:
     low, high, without_range = _range_from_text(remainder)
+    range_suspicious = False
     if low is not None and high is not None and low > high:
         low, high = high, low
         range_suspicious = True
-    else:
-        range_suspicious = False
 
     flag_match = FLAG_PATTERN.search(without_range)
     flag = flag_match.group("flag") if flag_match else None
     if flag:
         flag = "normal" if flag.casefold() == "normal" else ("H" if flag.casefold() in {"h", "high"} else "L")
+        
     unit_candidates = [token.strip("()[]") for token in without_range.split() if UNIT_PATTERN.fullmatch(token.strip("()[]"))]
     unit = unit_candidates[0] if unit_candidates else None
+    
+    # OCR tolerance for lakh/million
+    if unit_candidates and "lakh" in without_range.casefold():
+        unit = "lakh/uL"
+    if unit_candidates and "million" in without_range.casefold():
+        unit = "million/uL"
+        
     fields = {
         "raw_test_name": raw_name,
         "value": value,
@@ -146,17 +156,64 @@ def _parse_line(line: str, report_date: str | None, ocr_confidence: float | None
         "flag": flag,
         "report_date": report_date,
     }
+    
     confidence, field_confidence = _confidence(fields, line, ocr_confidence)
-    if range_suspicious or (value > 100000):
+    
+    if range_suspicious or (value is not None and value > 100000):
         confidence = round(confidence * 0.3, 3)
-    fields.update(
-        {
-            "extraction_confidence": confidence,
-            "field_confidence": field_confidence,
-            "user_corrected": False,
-        }
-    )
+        
+    if strategy == 2:
+        confidence = round(confidence * 0.85, 3)
+        field_confidence["raw_test_name"] = round(field_confidence["raw_test_name"] * 0.85, 3)
+        
+    # OCR substitution tolerance: 08 parsed as 8.0, but confidence should be lowered
+    if value_str and value_str.startswith("0") and len(value_str) > 1 and "." not in value_str:
+        field_confidence["value"] = round(field_confidence["value"] * 0.3, 3)
+        confidence = round(confidence * 0.5, 3)
+        
+    fields.update({
+        "extraction_confidence": confidence,
+        "field_confidence": field_confidence,
+        "user_corrected": False,
+    })
+    
     return normalize_result(fields)
+
+
+def _parse_line(line: str, report_date: str | None, ocr_confidence: float | None) -> dict[str, Any] | None:
+    line = " ".join(line.split()).strip(" |:")
+    
+    # Strategy 1: Dictionary-Aware
+    known_prefix = _known_test_prefix(line)
+    if known_prefix:
+        raw_name, remainder = known_prefix
+        remainder = remainder.strip(" |:")
+        
+        # Check for missing values (N/A, --)
+        missing_value_match = re.match(r"^(?:--|N/?A)\s+(?P<remainder>.+)$", remainder, re.I)
+        if missing_value_match:
+            return _build_result(raw_name, None, None, missing_value_match.group("remainder"), line, report_date, ocr_confidence, strategy=1)
+            
+        value_match = re.search(rf"(?P<value>{NUMBER})", remainder)
+        if value_match:
+            value_str = value_match.group("value")
+            value = _number(value_str)
+            remainder = remainder[value_match.end() :].strip(" |,;")
+            return _build_result(raw_name, value, value_str, remainder, line, report_date, ocr_confidence, strategy=1)
+
+    # Strategy 2: Generic Row matching
+    generic_match = GENERIC_ROW_PATTERN.match(line)
+    if generic_match:
+        raw_name = generic_match.group("name").strip(" |:-")
+        value_str = generic_match.group("value")
+        value = _number(value_str)
+        remainder = generic_match.group("remainder").strip(" |,;")
+        
+        # Ensure name looks like a valid test name (letters, >2 chars)
+        if len(raw_name) > 2 and not raw_name.isnumeric() and re.search(r'[A-Za-z]', raw_name):
+            return _build_result(raw_name, value, value_str, remainder, line, report_date, ocr_confidence, strategy=2)
+
+    return None
 
 
 def _parse_columnar_rows(raw_text: str, report_date: str | None, ocr_confidence: float | None) -> list[dict[str, Any]]:
@@ -195,7 +252,7 @@ def extract_candidates(raw_text: str, ocr_confidence: float | None = None) -> li
     if not candidates:
         with open("failed_ocr.txt", "w", encoding="utf-8") as f:
             f.write(raw_text)
-        raise ExtractionError("No recognizable laboratory results were found in the document.")
+        raise ExtractionError("We could not find readable lab rows in this report. Try a clearer scan or check the source text.")
     for index, candidate in enumerate(candidates, 1):
         candidate["id"] = f"result_{index}"
     return candidates

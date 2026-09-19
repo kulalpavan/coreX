@@ -1,3 +1,6 @@
+import dotenv
+dotenv.load_dotenv()
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -85,8 +88,13 @@ class Confirmation(BaseModel):
     results: list[TestResult]
 
 
+class ChatMessage(BaseModel):
+    role: str = Field(pattern="^(user|model|assistant)$")
+    content: str = Field(min_length=1, max_length=2000)
+
 class ChatQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
+    history: list[ChatMessage] = Field(default_factory=list)
 
 
 def canonicalize_test_name(raw_name: str) -> str:
@@ -223,7 +231,7 @@ def chat_about_report(report_id: str, body: ChatQuestion) -> dict[str, Any]:
     report = reports.get(report_id)
     if not report or report["status"] != "confirmed":
         raise HTTPException(409, "Confirm the report before asking questions about it.")
-    return answer_question(body.question, report)
+    return answer_question(body.question, body.history, report)
 
 
 @app.get("/api/patients/{patient_id}/trends/{canonical_test_id}")
