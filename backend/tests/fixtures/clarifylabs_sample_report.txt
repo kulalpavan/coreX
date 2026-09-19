@@ -1,0 +1,21 @@
+Clarify Labs Sample Laboratory Report
+This document is created only for testing the Clarify Labs Member 3 pipeline.
+Patient ID: DEMO-001
+Report Date: 2026-08-14
+
+Complete Blood Count (CBC)
+Test Name | Result | Unit | Reference Range | Flag
+Hemoglobin | 13.4 | g/dL | 12.0 - 15.5 | Normal
+HGB | 13.4 | g/dL | 12.0 - 15.5 | Normal
+White Blood Cell Count | 7,200 | cells/µL | 4,000 - 11,000 | Normal
+Platelet Count | 245,000 | cells/µL | 150,000 - 450,000 | Normal
+
+Lipid Profile
+Total Cholesterol | 186 | mg/dL | < 200 | Normal
+LDL Cholesterol | 112 | mg/dL | < 130 | Normal
+HDL Cholesterol | 52 | mg/dL | > 40 | Normal
+Triglycerides | 108 | mg/dL | < 150 | Normal
+
+Thyroid Panel
+TSH | 2.14 | µIU/mL | 0.40 - 4.50 | Normal
+Free T4 | 1.18 | ng/dL | 0.80 - 1.80 | Normal
