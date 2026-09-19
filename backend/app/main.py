@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 import re
@@ -7,17 +7,22 @@ from io import BytesIO
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .extraction import ExtractionError, process_report
+from .normalization import canonical_test_id
+from .storage import ReportStore
+
 
 DISCLAIMER = "Prototype education only. This summary is not a diagnosis. Discuss your results with a qualified clinician."
 ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 MAX_BYTES = 15 * 1024 * 1024
+DEFAULT_PATIENT_ID = "p_demo"
 
 app = FastAPI(title="Clarify Labs API", version="0.1.0")
 app.add_middleware(
@@ -27,7 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-reports: dict[str, dict[str, Any]] = {}
+reports = ReportStore()
 
 
 class TestResult(BaseModel):
@@ -44,78 +49,30 @@ class TestResult(BaseModel):
     user_corrected: bool = False
     explanation_text: str | None = None
 
+    @model_validator(mode="after")
+    def validate_result_fields(self) -> "TestResult":
+        if not self.raw_test_name.strip():
+            raise ValueError("raw_test_name cannot be empty")
+        if self.reference_range_low is not None and self.reference_range_high is not None:
+            if self.reference_range_low > self.reference_range_high:
+                raise ValueError("reference_range_low cannot exceed reference_range_high")
+        if self.report_date is not None:
+            try:
+                datetime.strptime(self.report_date, "%Y-%m-%d")
+            except ValueError as error:
+                raise ValueError("report_date must use YYYY-MM-DD format") from error
+        if self.flag not in {None, "H", "L", "normal"}:
+            raise ValueError("flag must be H, L, normal, or null")
+        return self
+
 
 class Confirmation(BaseModel):
     results: list[TestResult]
 
 
-def sample_results() -> list[dict[str, Any]]:
-    rows = [
-        ("Hemoglobin", 13.8, "g/dL", 12.0, 15.5, "normal", 0.97),
-        ("Total Cholesterol", 214, "mg/dL", 0, 200, "H", 0.94),
-        ("TSH", 2.4, "mIU/L", 0.4, 4.0, "normal", 0.88),
-        ("ALT", 31, "U/L", 7, 56, "normal", 0.72),
-    ]
-    return [
-        {
-            "id": f"result_{index}",
-            "raw_test_name": name,
-            "canonical_test_id": canonicalize_test_name(name),
-            "value": value,
-            "unit": unit,
-            "reference_range_low": low,
-            "reference_range_high": high,
-            "flag": flag,
-            "report_date": "2026-08-14",
-            "extraction_confidence": confidence,
-            "user_corrected": False,
-            "explanation_text": None,
-        }
-        for index, (name, value, unit, low, high, flag, confidence) in enumerate(rows, 1)
-    ]
-
-
-def extract_results(raw_text: str) -> list[dict[str, Any]]:
-    matches: list[dict[str, Any]] = []
-    pattern = re.compile(
-        r"(?P<name>[A-Za-z][A-Za-z ]{2,})\s+(?P<value>-?\d+(?:\.\d+)?)\s+(?P<unit>[A-Za-z/%]+)"
-    )
-    for index, match in enumerate(pattern.finditer(raw_text), 1):
-        matches.append(
-            {
-                "id": f"result_{index}",
-                "raw_test_name": match.group("name").strip(),
-                "canonical_test_id": canonicalize_test_name(match.group("name").strip()),
-                "value": float(match.group("value")),
-                "unit": match.group("unit"),
-                "reference_range_low": None,
-                "reference_range_high": None,
-                "flag": None,
-                "report_date": date.today().isoformat(),
-                "extraction_confidence": 0.62,
-                "user_corrected": False,
-                "explanation_text": None,
-            }
-        )
-    return matches or sample_results()
-
-
-CANONICAL_TESTS = {
-    "hemoglobin": "hemoglobin",
-    "hb": "hemoglobin",
-    "hgb": "hemoglobin",
-    "total cholesterol": "total_cholesterol",
-    "cholesterol": "total_cholesterol",
-    "tsh": "tsh",
-    "alt": "alt",
-}
-
-
 def canonicalize_test_name(raw_name: str) -> str:
-    normalized = " ".join(raw_name.lower().split())
-    return CANONICAL_TESTS.get(normalized, normalized.replace(" ", "_"))
-
-
+    normalized = " ".join(raw_name.casefold().split())
+    return canonical_test_id(normalized) or normalized.replace(" ", "_")
 def safe_explanation(result: dict[str, Any]) -> str:
     name = result["raw_test_name"]
     value = result.get("value")
@@ -150,17 +107,22 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
     if len(payload) > MAX_BYTES:
         raise HTTPException(413, "Files must be 15 MB or smaller.")
     report_id = f"r_{uuid4().hex[:8]}"
-    raw_text = payload.decode("utf-8", errors="ignore") if file.content_type != "application/pdf" else ""
-    results = extract_results(raw_text)
-    reports[report_id] = {
+    try:
+        processed = process_report(payload, file.content_type, file.filename)
+    except (ExtractionError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    reports.create({
         "id": report_id,
         "filename": file.filename or "untitled-report",
-        "source_type": "pdf_text" if file.content_type == "application/pdf" else "image",
-        "patient_id": "p_demo",
+        "source_type": processed["source_type"],
+        "ocr_confidence": processed["ocr_confidence"],
+        "patient_id": DEFAULT_PATIENT_ID,
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "results": results,
-    }
+        "results": processed["results"],
+    })
     return {"report_id": report_id, "status": "processing"}
 
 
@@ -308,5 +270,5 @@ def export_report(report_id: str) -> StreamingResponse:
 
 @app.delete("/api/patients/{patient_id}/data")
 def delete_data(patient_id: str) -> dict[str, str]:
-    reports.clear()
+    reports.delete_patient(patient_id)
     return {"status": "deleted", "patient_id": patient_id}
