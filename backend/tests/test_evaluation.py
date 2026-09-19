@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
+import json
 
 import pytest
 
@@ -42,3 +43,14 @@ def test_low_ocr_confidence_has_clear_error() -> None:
 
     assert result.error is not None
     assert "too unclear" in result.error
+
+
+def test_synthetic_image_corpus_has_ground_truth_for_ocr_runs() -> None:
+    corpus = FIXTURES / "image_samples"
+    ground_truth = json.loads((corpus / "ground_truth.json").read_text())
+
+    for filename, expected_names in ground_truth["samples"].items():
+        image = corpus / filename
+        assert image.is_file()
+        assert image.stat().st_size > 0
+        assert expected_names

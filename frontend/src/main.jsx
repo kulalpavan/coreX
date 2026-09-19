@@ -1,4 +1,4 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -13,6 +13,7 @@ import { DeleteModal } from "./components/DeleteModal";
 
 import {
   confirmReport,
+  checkHealth,
   deletePatientData,
   exportPdf,
   getExtraction,
@@ -38,6 +39,13 @@ function App() {
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [apiStatus, setApiStatus] = useState("checking");
+
+  useEffect(() => {
+    let active = true;
+    checkHealth().then(() => active && setApiStatus("online")).catch(() => active && setApiStatus("offline"));
+    return () => { active = false; };
+  }, []);
 
   function localExplanationFor(result) {
     const val = result.value;
@@ -84,7 +92,14 @@ function App() {
       setScreen("review");
     } catch (err) {
       console.error("Upload error:", err);
-      setError(err.message || "Could not process this report. Make sure backend is running.");
+      const message = err.message || "Could not process this report.";
+      setError(
+        message.includes("Tesseract")
+          ? "OCR is not available on this machine. Install Tesseract or upload a text-based PDF."
+          : message.includes("No recognizable")
+            ? "We could not find readable lab rows in this report. Try a clearer scan or check the source text."
+            : message
+      );
     } finally {
       setLoading(false);
     }
@@ -204,13 +219,13 @@ function App() {
 
   return (
     <main className="app-shell">
-      <Topbar onDeleteClick={() => setDeleteModalOpen(true)} />
+      <Topbar apiStatus={apiStatus} onDeleteClick={() => setDeleteModalOpen(true)} />
 
       <section className="workspace">
         <Sidebar screen={screen} setScreen={setScreen} hasResults={results.length > 0} />
 
         <section className="content-panel">
-          {screen === "upload" && <UploadView onFileSelect={handleLoadReport} error={error} />}
+          {screen === "upload" && <UploadView onFileSelect={handleLoadReport} error={error} onRetry={() => setError("")} />}
 
           {screen === "review" && (
             <ReviewView

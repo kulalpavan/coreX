@@ -1,5 +1,5 @@
-import React from "react";
-import { AlertCircle, ArrowUpRight, FileText, Plus, Trash2 } from "lucide-react";
+import React, { useState } from "react";
+import { AlertCircle, ArrowUpRight, FileText, Minus, Plus, Trash2 } from "lucide-react";
 import { getSourceFileUrl } from "../services/api";
 
 function confidenceLabel(value) {
@@ -23,6 +23,7 @@ function displayFileName(fileName) {
 
 export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
   const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8).length;
+  const [previewScale, setPreviewScale] = useState(1);
 
   return (
     <div className="view review-view">
@@ -43,20 +44,21 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
           {displayFileName(fileName)}
         </span>
         <span>{results.length} values found</span>
+        <span className="review-meta-detail">{reportDate || "Date unavailable"} · {sourceType || "source unavailable"}</span>
       </div>
 
       <div className="review-source-grid">
         <div className="source-preview" aria-label="Original report preview">
-          <div className="source-preview-header"><span>Original report</span><span>{sourceType || "source"}</span></div>
+          <div className="source-preview-header"><span>Original report</span><span className="preview-actions"><button type="button" title="Zoom out" onClick={() => setPreviewScale((value) => Math.max(.75, value - .25))}><Minus size={13} /></button><strong>{Math.round(previewScale * 100)}%</strong><button type="button" title="Zoom in" onClick={() => setPreviewScale((value) => Math.min(1.75, value + .25))}><Plus size={13} /></button></span></div>
           {reportId && sourceType?.startsWith("pdf") ? (
             <>
-              <iframe title="Original report" src={getSourceFileUrl(reportId)} />
+              <div className="preview-viewport"><iframe title="Original report" src={getSourceFileUrl(reportId)} style={{ transform: `scale(${previewScale})` }} /></div>
               <a className="source-open-link" href={getSourceFileUrl(reportId)} target="_blank" rel="noreferrer">
                 Open original report in a new tab
               </a>
             </>
           ) : reportId ? (
-            <img alt="Original uploaded report" src={getSourceFileUrl(reportId)} />
+            <div className="preview-viewport"><img alt="Original uploaded report" src={getSourceFileUrl(reportId)} style={{ transform: `scale(${previewScale})` }} /></div>
           ) : (
             <pre>Sample report mode has no original file.</pre>
           )}

@@ -1,0 +1,8 @@
+{
+  "synthetic_proxy_notice": "These PNGs are generated anonymized scan proxies for deterministic pipeline checks. They are not real clinical photographs and must not be used as production OCR accuracy claims.",
+  "samples": {
+    "cbc_scan_proxy.png": ["Hemoglobin", "White Blood Cell Count", "Platelet Count"],
+    "lipid_scan_proxy.png": ["Total Cholesterol", "LDL Cholesterol", "HDL Cholesterol", "Triglycerides"],
+    "thyroid_scan_proxy.png": ["TSH", "Free T4"]
+  }
+}

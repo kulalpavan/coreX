@@ -30,6 +30,8 @@ Upload a report, review the retained source text beside the extracted fields, co
 
 See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the recommended walkthrough and [docs/extraction-evaluation.md](docs/extraction-evaluation.md) for the current anonymized evaluation set. The architecture is documented in [Implementation/system_design.md](Implementation/system_design.md).
 
+For a fresh clone, run the backend tests with `cd backend; pytest -q` and the frontend build with `cd frontend; npm install; npm run build`. Image OCR additionally requires the Tesseract executable installed and available on `PATH`; text-based PDFs work without it.
+
 ## Prototype boundaries
 
 The ingestion adapter uses direct PDF text extraction and Tesseract/PyMuPDF OCR when those local dependencies are available. The sample report is an explicit demo action, not an upload fallback. LLM extraction, authentication, cloud storage, and production privacy controls remain future work. This is not a certified medical device and does not provide diagnosis or treatment advice.

@@ -1,5 +1,11 @@
 const API_URL = "http://localhost:8000";
 
+export async function checkHealth() {
+  const response = await fetch(`${API_URL}/api/health`);
+  if (!response.ok) throw new Error("Backend unavailable");
+  return response.json();
+}
+
 export const sampleDemoResults = [
   {
     id: "demo_1",

@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { AlertCircle, ArrowUpRight, UploadCloud } from "lucide-react";
 
-export function UploadView({ onFileSelect, error }) {
+export function UploadView({ onFileSelect, error, onRetry }) {
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState("");
   const fileInputRef = useRef(null);
@@ -96,10 +96,10 @@ export function UploadView({ onFileSelect, error }) {
       </button>
 
       {activeError && (
-        <p className="error-message" role="alert">
-          <AlertCircle size={15} />
-          {activeError}
-        </p>
+        <div className="upload-error" role="alert">
+          <p className="error-message"><AlertCircle size={15} />{activeError}</p>
+          <button type="button" className="secondary-button retry-button" onClick={onRetry}>Try another file</button>
+        </div>
       )}
 
       <div className="trust-strip">

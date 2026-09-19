@@ -27,3 +27,9 @@ A future labeled-report pass should add, for each field, the expected value and 
 - Report-level failure reasons for unreadable, unsupported, or ambiguous input.
 
 Accuracy numbers should only be added after the team labels real anonymized sample reports.
+
+## Image OCR corpus
+
+`backend/tests/fixtures/image_samples/` contains three synthetic scan proxies for CBC, lipid, and thyroid panels plus `ground_truth.json`. They exercise the image upload path without containing real patient information. They are intentionally labeled synthetic and are not presented as real photographed-report accuracy. On a demo machine with Tesseract installed, run the image files through `ingest_document()` and record field precision/recall separately from the deterministic text/PDF baseline.
+
+The application now reports a clear setup error when the Tesseract executable is missing, rather than returning an opaque server traceback.

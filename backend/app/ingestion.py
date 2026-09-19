@@ -46,7 +46,10 @@ def _ocr_image(image) -> tuple[str, float | None]:
 
     image = image.convert("L")
     image = image.point(lambda pixel: 255 if pixel > 180 else 0)
-    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    try:
+        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    except pytesseract.TesseractNotFoundError as exc:
+        raise RuntimeError("OCR is unavailable because the Tesseract executable is not installed or is not on PATH.") from exc
     words = [text.strip() for text in data["text"] if text.strip()]
     confidences = [float(value) for value in data["conf"] if float(value) >= 0]
     confidence = (sum(confidences) / len(confidences) / 100) if confidences else None
