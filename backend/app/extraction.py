@@ -54,7 +54,8 @@ def _known_test_prefix(line: str) -> tuple[str, str] | None:
         reverse=True,
     )
     for name in names:
-        match = re.match(rf"^{re.escape(name)}(?=\s|$)", normalized, re.I)
+        # Allow leading non-alphanumeric characters (like stray punctuation from OCR)
+        match = re.search(rf"^[^a-zA-Z0-9]*{re.escape(name)}(?=\s|$)", normalized, re.I)
         if match:
             return normalized[: match.end()].strip(), normalized[match.end() :].strip()
     return None
@@ -192,6 +193,8 @@ def extract_candidates(raw_text: str, ocr_confidence: float | None = None) -> li
     if not candidates:
         candidates = _parse_columnar_rows(raw_text, report_date, ocr_confidence)
     if not candidates:
+        with open("failed_ocr.txt", "w", encoding="utf-8") as f:
+            f.write(raw_text)
         raise ExtractionError("No recognizable laboratory results were found in the document.")
     for index, candidate in enumerate(candidates, 1):
         candidate["id"] = f"result_{index}"

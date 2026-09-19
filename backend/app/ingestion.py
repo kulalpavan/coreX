@@ -87,17 +87,58 @@ def _ocr_image(image) -> tuple[str, float | None]:
     except ImportError as exc:
         raise RuntimeError("OCR is unavailable because pytesseract is not installed.") from exc
 
+    try:
+        from PIL import Image, ImageEnhance
+    except ImportError as exc:
+        raise RuntimeError("OCR is unavailable because Pillow is not installed.") from exc
+
     _configure_tesseract(pytesseract)
+    
+    # Pre-process for low quality images
     image = image.convert("L")
-    image = image.point(lambda pixel: 255 if pixel > 180 else 0)
+    
+    # 1. Removed expensive upscaling that was causing major slowdowns
+    
+    # 2. Increase contrast moderately
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(1.5)
+    
+    # 3. Increase sharpness
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(1.5)
+    
     try:
         data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
     except pytesseract.TesseractNotFoundError as exc:
         raise RuntimeError("OCR is unavailable because the Tesseract executable is not installed or is not on PATH.") from exc
-    words = [text.strip() for text in data["text"] if text.strip()]
-    confidences = [float(value) for value in data["conf"] if float(value) >= 0]
+    
+    lines = []
+    current_line = []
+    last_tuple = None
+    confidences = []
+    
+    for i in range(len(data["text"])):
+        text = data["text"][i].strip()
+        conf = float(data["conf"][i])
+        if not text or conf < 0:
+            continue
+            
+        current_tuple = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        if last_tuple is not None and current_tuple != last_tuple:
+            if current_line:
+                lines.append(" ".join(current_line))
+                current_line = []
+                
+        current_line.append(text)
+        confidences.append(conf)
+        last_tuple = current_tuple
+        
+    if current_line:
+        lines.append(" ".join(current_line))
+        
+    text_out = "\n".join(lines)
     confidence = (sum(confidences) / len(confidences) / 100) if confidences else None
-    return " ".join(words), confidence
+    return text_out, confidence
 
 
 def _ocr_payload(payload: bytes, source_type: str) -> tuple[str, float | None]:

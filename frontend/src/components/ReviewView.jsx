@@ -24,6 +24,49 @@ function displayFileName(fileName) {
 export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
   const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8 || r.review_required).length;
   const [previewScale, setPreviewScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const viewportRef = React.useRef(null);
+  const dragStart = React.useRef({ x: 0, y: 0 });
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY * -0.002;
+      setPreviewScale((prev) => Math.min(Math.max(0.25, prev + delta), 4));
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, []);
+
+  const handlePointerDown = (e) => {
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDragging) return;
+    setPan({
+      x: e.clientX - dragStart.current.x,
+      y: e.clientY - dragStart.current.y
+    });
+  };
+
+  const handlePointerUp = (e) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const transformStyle = {
+    transform: `translate(${pan.x}px, ${pan.y}px) scale(${previewScale})`,
+    transformOrigin: "center center",
+    cursor: isDragging ? "grabbing" : "grab"
+  };
 
   return (
     <div className="view review-view">
@@ -49,16 +92,41 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
 
       <div className="review-source-grid">
         <div className="source-preview" aria-label="Original report preview">
-          <div className="source-preview-header"><span>Original report</span><span className="preview-actions"><button type="button" title="Zoom out" onClick={() => setPreviewScale((value) => Math.max(.75, value - .25))}><Minus size={13} /></button><strong>{Math.round(previewScale * 100)}%</strong><button type="button" title="Zoom in" onClick={() => setPreviewScale((value) => Math.min(1.75, value + .25))}><Plus size={13} /></button></span></div>
+          <div className="source-preview-header">
+            <span>Original report</span>
+            <span className="preview-actions">
+              <button type="button" title="Zoom out" onClick={() => setPreviewScale((value) => Math.max(0.25, value - 0.25))}><Minus size={13} /></button>
+              <strong>{Math.round(previewScale * 100)}%</strong>
+              <button type="button" title="Zoom in" onClick={() => setPreviewScale((value) => Math.min(4, value + 0.25))}><Plus size={13} /></button>
+            </span>
+          </div>
           {reportId && sourceType?.startsWith("pdf") ? (
             <>
-              <div className="preview-viewport"><iframe title="Original report" src={getSourceFileUrl(reportId)} style={{ transform: `scale(${previewScale})` }} /></div>
+              <div 
+                className="preview-viewport" 
+                ref={viewportRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+              >
+                <iframe title="Original report" src={getSourceFileUrl(reportId)} style={{...transformStyle, pointerEvents: 'none'}} />
+              </div>
               <a className="source-open-link" href={getSourceFileUrl(reportId)} target="_blank" rel="noreferrer">
                 Open original report in a new tab
               </a>
             </>
           ) : reportId ? (
-            <div className="preview-viewport"><img alt="Original uploaded report" src={getSourceFileUrl(reportId)} style={{ transform: `scale(${previewScale})` }} /></div>
+            <div 
+              className="preview-viewport" 
+              ref={viewportRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+            >
+              <img alt="Original uploaded report" src={getSourceFileUrl(reportId)} style={{...transformStyle, pointerEvents: 'none'}} draggable="false" />
+            </div>
           ) : (
             <pre>Sample report mode has no original file.</pre>
           )}

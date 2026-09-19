@@ -4,7 +4,6 @@ import { DisclaimerBanner } from "./DisclaimerBanner";
 import { ReportChat } from "./ReportChat";
 
 export function ExplanationView({ results, reportId, disclaimer, onExportPdf, onViewTrends, onRestart }) {
-  const [chatOpen, setChatOpen] = useState(false);
 
   return (
     <div className="view explanation-view">
@@ -70,9 +69,8 @@ export function ExplanationView({ results, reportId, disclaimer, onExportPdf, on
             <button className="secondary-button restart-button" onClick={onRestart}>
               <RotateCcw size={16} /> Review another report <ArrowUpRight size={15} />
             </button>
-        {reportId && <button className="secondary-button chat-button" onClick={() => setChatOpen(true)}><MessageCircle size={16} /> Ask about report</button>}
       </div>
-      {chatOpen && <ReportChat reportId={reportId} onClose={() => setChatOpen(false)} />}
+      {reportId && <ReportChat reportId={reportId} />}
     </div>
   );
 }
