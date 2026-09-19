@@ -608,6 +608,35 @@ td select:focus {
   gap: 18px;
   margin: 28px 0 36px;
 }
+.summary-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+.summary-results { min-width: 0; }
+.summary-strip {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #d9d7d1;
+  border-bottom: 1px solid #d9d7d1;
+  padding: 10px 0;
+  color: #718079;
+  font: 10px "DM Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.summary-strip span:last-child { color: #397361; }
+.summary-layout .result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0 20px; gap: 12px; }
+.summary-layout .result-card { padding: 17px; border-radius: 6px; }
+.summary-layout .result-value { font-size: 29px; margin: 13px 0 8px; }
+.summary-layout .result-explanation { font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
+.summary-chat-rail { position: sticky; top: 18px; min-width: 0; }
+.report-chat.side-chat { margin: 0; padding: 16px; border-radius: 6px; }
+.side-chat .report-chat-heading span { font-size: 10px; }
+.side-chat .report-chat-form { flex-direction: column; }
+.side-chat .report-chat-form button { justify-content: center; }
+.side-chat .report-chat-answer { max-height: 280px; overflow: auto; }
 .report-chat {
   border: 1px solid #cbd8d1;
   background: #edf4ef;
@@ -618,8 +647,10 @@ td select:focus {
 .report-chat-heading div { display: grid; gap: 4px; }
 .report-chat-heading span { color: #687870; font-size: 11px; line-height: 1.5; }
 .report-chat-answer { white-space: pre-line; background: #fffdfa; border: 1px solid #d9e2dc; padding: 13px; margin-top: 14px; color: #465b52; font-size: 12px; line-height: 1.65; }
+.report-chat-locked { color: #687870; font-size: 11px; line-height: 1.5; margin: 14px 0 0; }
 .report-chat-form { display: flex; gap: 8px; margin-top: 13px; }
 .report-chat-form input { flex: 1; min-width: 0; border: 1px solid #b9c7bf; padding: 10px 12px; background: white; }
+.report-chat-form input:disabled { background: #e5ece7; color: #89948e; cursor: not-allowed; }
 .report-chat-form button { border: 0; background: #155c51; color: white; padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .report-chat-form button:disabled { opacity: .5; cursor: not-allowed; }
 .result-card {
@@ -959,6 +990,9 @@ td select:focus {
   .result-grid {
     grid-template-columns: 1fr;
   }
+  .summary-layout { grid-template-columns: 1fr; }
+  .summary-chat-rail { position: static; order: -1; }
+  .summary-layout .result-grid { grid-template-columns: 1fr; }
   .review-source-grid {
     grid-template-columns: 1fr;
   }

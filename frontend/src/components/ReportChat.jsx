@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 import { askReportQuestion } from "../services/api";
 
-export function ReportChat({ reportId }) {
+export function ReportChat({ reportId, className = "" }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,13 +25,14 @@ export function ReportChat({ reportId }) {
   }
 
   return (
-    <section className="report-chat" aria-label="Ask about this report">
+    <section className={`report-chat ${className}`} aria-label="Ask about this report">
       <div className="report-chat-heading"><MessageCircle size={17} /><div><strong>Ask about this report</strong><span>Source-grounded explanations only. No diagnosis or treatment decisions.</span></div></div>
+      {!reportId && <p className="report-chat-locked">Upload and confirm a report to ask questions about its contents.</p>}
       {answer && <div className="report-chat-answer">{answer}</div>}
       {error && <p className="error-message" role="alert">{error}</p>}
       <form onSubmit={submit} className="report-chat-form">
-        <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What does Hemoglobin mean here?" aria-label="Question about report" />
-        <button type="submit" disabled={busy || !question.trim()} title="Ask question"><Send size={15} />{busy ? "Asking" : "Ask"}</button>
+        <input disabled={!reportId} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What does Hemoglobin mean here?" aria-label="Question about report" />
+        <button type="submit" disabled={!reportId || busy || !question.trim()} title="Ask question"><Send size={15} />{busy ? "Asking" : "Ask"}</button>
       </form>
     </section>
   );

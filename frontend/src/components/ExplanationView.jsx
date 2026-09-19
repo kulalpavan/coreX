@@ -19,16 +19,17 @@ export function ExplanationView({ results, reportId, disclaimer, onExportPdf, on
 
       <DisclaimerBanner text={disclaimer} />
 
-      {reportId && <ReportChat reportId={reportId} />}
-
-      <div className="result-grid">
-        {results.map((result) => {
+      <div className="summary-layout">
+        <div className="summary-results">
+          <div className="summary-strip"><span>{results.length} confirmed measurements</span><span>Review complete</span></div>
+          <div className="result-grid">
+            {results.map((result) => {
           const isHigh = result.flag === "H";
           const isLow = result.flag === "L";
           const flagLabel = isHigh ? "Above range" : isLow ? "Below range" : "Within range";
           const flagClass = isHigh ? "high" : isLow ? "low" : "normal";
 
-          return (
+              return (
             <article className="result-card" key={result.id}>
               <div className="result-card-top">
                 <span className="result-title">
@@ -65,22 +66,25 @@ export function ExplanationView({ results, reportId, disclaimer, onExportPdf, on
                 </strong>
               </div>
             </article>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
 
-      <div className="action-toolbar">
-        <button className="primary-button" onClick={onExportPdf}>
-          <Download size={16} /> Export Summary PDF
-        </button>
+          <div className="action-toolbar">
+            <button className="primary-button" onClick={onExportPdf}>
+              <Download size={16} /> Export Summary PDF
+            </button>
 
-        <button className="secondary-button" onClick={onViewTrends}>
-          <LineChart size={16} /> View Historical Trends
-        </button>
+            <button className="secondary-button" onClick={onViewTrends}>
+              <LineChart size={16} /> View Historical Trends
+            </button>
 
-        <button className="secondary-button restart-button" onClick={onRestart}>
-          <RotateCcw size={16} /> Review another report <ArrowUpRight size={15} />
-        </button>
+            <button className="secondary-button restart-button" onClick={onRestart}>
+              <RotateCcw size={16} /> Review another report <ArrowUpRight size={15} />
+            </button>
+          </div>
+        </div>
+        <aside className="summary-chat-rail"><ReportChat reportId={reportId} className="side-chat" /></aside>
       </div>
     </div>
   );
