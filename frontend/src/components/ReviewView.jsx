@@ -7,7 +7,7 @@ function confidenceLabel(value) {
   return "Needs review";
 }
 
-export function ReviewView({ fileName, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
+export function ReviewView({ fileName, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
   const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8).length;
 
   return (
@@ -29,6 +29,11 @@ export function ReviewView({ fileName, results, onUpdate, onAddRow, onDeleteRow,
           {fileName || "uploaded-report.pdf"}
         </span>
         <span>{results.length} values found</span>
+      </div>
+
+      <div className="source-preview" aria-label="Extracted source text">
+        <div className="source-preview-header"><span>Source text</span><span>Read-only evidence</span></div>
+        <pre>{sourceText || "No readable source text was returned. Review the extracted fields manually."}</pre>
       </div>
 
       <div className="review-table-wrap">

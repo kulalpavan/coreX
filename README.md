@@ -24,6 +24,12 @@ npm run dev
 
 Open the Vite URL shown in the terminal. The frontend uses `http://localhost:8000` for the API.
 
+## Working MVP flow
+
+Upload a report, review the retained source text beside the extracted fields, correct any low-confidence values, confirm the report, read the guarded explanation, view trends after two confirmed data points, and export a disclaimer-bearing PDF. Confirmed reports are stored in local SQLite at `backend/storage/reports.sqlite3`.
+
+See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the recommended walkthrough and [docs/extraction-evaluation.md](docs/extraction-evaluation.md) for the current anonymized evaluation set.
+
 ## Prototype boundaries
 
-The ingestion adapter currently handles text-bearing files and includes a deterministic sample fallback for a demo report. PDF OCR/LLM providers, persistent database storage, authentication, and production privacy controls are intentionally left as replaceable next steps. This is not a certified medical device and does not provide diagnosis or treatment advice.
+The ingestion adapter uses direct PDF text extraction and Tesseract/PyMuPDF OCR when those local dependencies are available. The sample report is an explicit demo action, not an upload fallback. LLM extraction, authentication, cloud storage, and production privacy controls remain future work. This is not a certified medical device and does not provide diagnosis or treatment advice.

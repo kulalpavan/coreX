@@ -98,6 +98,17 @@ def test_export_rejects_unconfirmed_report() -> None:
     assert response.status_code == 409
 
 
+def test_source_endpoint_returns_retained_extracted_text() -> None:
+    report_id = create_report("2026-08-14", 13.8, status="pending_review")
+    reports[report_id]["raw_text"] = "Hemoglobin 13.8 g/dL"
+    reports.save(reports[report_id])
+
+    response = client.get(f"/api/reports/{report_id}/source")
+
+    assert response.status_code == 200
+    assert response.json()["raw_text"] == "Hemoglobin 13.8 g/dL"
+
+
 def test_confirmation_rejects_invalid_reference_range() -> None:
     report_id = create_report("2026-08-14", 13.8, status="pending_review")
     invalid_result = confirmed_result("2026-08-14", 13.8) | {

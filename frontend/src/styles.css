@@ -357,6 +357,30 @@ h2 {
   color: #718079;
   font-family: "DM Mono", monospace;
 }
+.source-preview {
+  border: 1px solid #d9d7d1;
+  background: #fffdfa;
+  margin-top: 16px;
+}
+.source-preview-header {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #e3e1db;
+  padding: 10px 13px;
+  color: #718079;
+  font: 10px "DM Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.source-preview pre {
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  color: #53645d;
+  font: 11px/1.65 "DM Mono", monospace;
+  white-space: pre-wrap;
+}
 .review-meta span:first-child {
   color: #172522;
   font-weight: 500;

@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .extraction import ExtractionError, process_report
+from .guardrail import guardrail
 from .normalization import canonical_test_id
 from .storage import ReportStore
 
@@ -87,13 +88,6 @@ def safe_explanation(result: dict[str, Any]) -> str:
     return f"{name} is recorded as {value_text} {unit}. The report does not include enough range information for a comparison. Discuss this result with your clinician for personal context."
 
 
-def guardrail(text: str) -> str:
-    blocked = re.compile(r"\b(diagnos|disease|cancer|take|stop|medication|emergency|dangerous|cure)\w*\b", re.I)
-    if blocked.search(text):
-        return "This result is available for review. Discuss it with your clinician for personal context."
-    return text
-
-
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -118,6 +112,7 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         "filename": file.filename or "untitled-report",
         "source_type": processed["source_type"],
         "ocr_confidence": processed["ocr_confidence"],
+        "raw_text": processed.get("raw_text", ""),
         "patient_id": DEFAULT_PATIENT_ID,
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -131,7 +126,26 @@ def get_extraction(report_id: str) -> dict[str, Any]:
     report = reports.get(report_id)
     if not report:
         raise HTTPException(404, "Report not found.")
-    return {"report_id": report_id, "filename": report["filename"], "status": report["status"], "results": report["results"]}
+    return {
+        "report_id": report_id,
+        "filename": report["filename"],
+        "status": report["status"],
+        "source_type": report["source_type"],
+        "results": report["results"],
+    }
+
+
+@app.get("/api/reports/{report_id}/source")
+def get_source(report_id: str) -> dict[str, Any]:
+    report = reports.get(report_id)
+    if not report:
+        raise HTTPException(404, "Report not found.")
+    return {
+        "report_id": report_id,
+        "filename": report["filename"],
+        "source_type": report["source_type"],
+        "raw_text": report.get("raw_text", ""),
+    }
 
 
 @app.post("/api/reports/{report_id}/confirm")
@@ -150,6 +164,7 @@ def confirm_report(report_id: str, body: Confirmation) -> dict[str, Any]:
     for result in report["results"]:
         result["explanation_text"] = guardrail(safe_explanation(result))
     report["status"] = "confirmed"
+    reports.save(report)
     return {"report_id": report_id, "status": report["status"], "results": report["results"], "disclaimer": DISCLAIMER}
 
 

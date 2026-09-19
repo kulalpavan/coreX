@@ -16,6 +16,7 @@ import {
   deletePatientData,
   exportPdf,
   getExtraction,
+  getSource,
   sampleDemoResults,
   uploadReport,
 } from "./services/api";
@@ -24,6 +25,7 @@ function App() {
   const [screen, setScreen] = useState("upload");
   const [fileName, setFileName] = useState("");
   const [results, setResults] = useState([]);
+  const [sourceText, setSourceText] = useState("");
   const [reportId, setReportId] = useState(null);
   const [patientId] = useState("p_demo");
   const [disclaimer, setDisclaimer] = useState("");
@@ -71,8 +73,10 @@ function App() {
 
       setLoadingMsg("Extracting candidate test values and confidence scores...");
       const extractionRes = await getExtraction(repId);
+      const sourceRes = await getSource(repId);
 
       setResults(extractionRes.results || []);
+      setSourceText(sourceRes.raw_text || "");
       setScreen("review");
     } catch (err) {
       console.error("Upload error:", err);
@@ -181,6 +185,7 @@ function App() {
       await deletePatientData(patientId);
       setResults([]);
       setReportId(null);
+      setSourceText("");
       setFileName("");
       setError("");
       setScreen("upload");
@@ -206,6 +211,7 @@ function App() {
           {screen === "review" && (
             <ReviewView
               fileName={fileName}
+              sourceText={sourceText}
               results={results}
               onUpdate={handleUpdateResult}
               onAddRow={handleAddRow}

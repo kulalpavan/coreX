@@ -81,6 +81,15 @@ export async function getExtraction(reportId) {
   return response.json();
 }
 
+export async function getSource(reportId) {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/source`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to retrieve source text.");
+  }
+  return response.json();
+}
+
 export async function confirmReport(reportId, results) {
   const response = await fetch(`${API_URL}/api/reports/${reportId}/confirm`, {
     method: "POST",

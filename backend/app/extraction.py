@@ -25,6 +25,7 @@ def process_report(payload: bytes, content_type: str | None, filename: str | Non
     if ingestion.error:
         raise ExtractionError(ingestion.error)
     return {
+        "raw_text": ingestion.text,
         "results": extract_candidates(ingestion.text, ingestion.ocr_confidence),
         "source_type": ingestion.source_type,
         "ocr_confidence": ingestion.ocr_confidence,
