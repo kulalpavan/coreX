@@ -2,9 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import os
+import shutil
 
 
 MIN_OCR_CONFIDENCE = 0.25
+
+
+def _configure_tesseract(pytesseract) -> None:
+    executable = shutil.which("tesseract")
+    if not executable:
+        candidates = (
+            os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Tesseract-OCR", "tesseract.exe"),
+        )
+        executable = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
+    if executable:
+        pytesseract.pytesseract.tesseract_cmd = executable
 
 
 @dataclass
@@ -22,6 +36,7 @@ def get_ocr_status() -> dict[str, str | bool | None]:
     except ImportError:
         return {"available": False, "version": None, "error": "pytesseract is not installed."}
     try:
+        _configure_tesseract(pytesseract)
         version = str(pytesseract.get_tesseract_version()).splitlines()[0]
         return {"available": True, "version": version, "error": None}
     except Exception:
@@ -72,6 +87,7 @@ def _ocr_image(image) -> tuple[str, float | None]:
     except ImportError as exc:
         raise RuntimeError("OCR is unavailable because pytesseract is not installed.") from exc
 
+    _configure_tesseract(pytesseract)
     image = image.convert("L")
     image = image.point(lambda pixel: 255 if pixel > 180 else 0)
     try:
