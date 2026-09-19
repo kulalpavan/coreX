@@ -55,53 +55,6 @@ export const sampleDemoResults = [
   },
 ];
 
-export const mockTrendsData = {
-  Hemoglobin: {
-    test_name: "Hemoglobin",
-    unit: "g/dL",
-    reference_range: "12.0 - 15.5",
-    description: "This value moved from 14.2 g/dL on 2026-03-10 to 13.8 g/dL on 2026-08-14.",
-    points: [
-      { date: "2026-01-15", value: 14.5, flag: "normal" },
-      { date: "2026-03-10", value: 14.2, flag: "normal" },
-      { date: "2026-08-14", value: 13.8, flag: "normal" },
-    ],
-  },
-  "Total Cholesterol": {
-    test_name: "Total Cholesterol",
-    unit: "mg/dL",
-    reference_range: "0 - 200",
-    description: "This value moved from 186 mg/dL on 2026-06-10 to 214 mg/dL on 2026-08-14.",
-    points: [
-      { date: "2025-11-20", value: 178, flag: "normal" },
-      { date: "2026-06-10", value: 186, flag: "normal" },
-      { date: "2026-08-14", value: 214, flag: "H" },
-    ],
-  },
-  TSH: {
-    test_name: "TSH",
-    unit: "mIU/L",
-    reference_range: "0.4 - 4.0",
-    description: "This value moved from 2.1 mIU/L on 2026-02-05 to 2.4 mIU/L on 2026-08-14.",
-    points: [
-      { date: "2025-08-12", value: 1.9, flag: "normal" },
-      { date: "2026-02-05", value: 2.1, flag: "normal" },
-      { date: "2026-08-14", value: 2.4, flag: "normal" },
-    ],
-  },
-  ALT: {
-    test_name: "ALT",
-    unit: "U/L",
-    reference_range: "7 - 56",
-    description: "This value moved from 28 U/L on 2026-04-18 to 31 U/L on 2026-08-14.",
-    points: [
-      { date: "2025-10-05", value: 25, flag: "normal" },
-      { date: "2026-04-18", value: 28, flag: "normal" },
-      { date: "2026-08-14", value: 31, flag: "normal" },
-    ],
-  },
-};
-
 export async function uploadReport(file) {
   if (!file) throw new Error("No file provided.");
   const formData = new FormData();
@@ -151,48 +104,28 @@ export async function getExplanations(reportId) {
 }
 
 export async function getTrends(patientId = "p_demo", canonicalTestId = "Hemoglobin") {
-  try {
-    const response = await fetch(`${API_URL}/api/patients/${patientId}/trends/${encodeURIComponent(canonicalTestId)}`);
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (err) {
-    console.warn("Using local trend mock fallback:", err);
+  const response = await fetch(`${API_URL}/api/patients/${patientId}/trends/${encodeURIComponent(canonicalTestId)}`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to load trends with status ${response.status}`);
   }
-  return mockTrendsData[canonicalTestId] || {
-    test_name: canonicalTestId,
-    unit: "",
-    reference_range: "N/A",
-    description: `Trend tracking active for ${canonicalTestId}.`,
-    points: [
-      { date: "2026-08-14", value: 10, flag: "normal" }
-    ]
-  };
+  return response.json();
 }
 
 export async function exportPdf(reportId) {
   if (!reportId) {
-    // Generate sample PDF text blob locally if demo mode
-    const blob = new Blob(
-      ["Clarify Labs Patient Summary PDF Export\n\nDemo Report Confirmed Results Summary."],
-      { type: "application/pdf" }
-    );
-    return blob;
+    throw new Error("Export is available after a report has been uploaded and confirmed.");
   }
-  try {
-    const response = await fetch(`${API_URL}/api/reports/${reportId}/export`, {
-      method: "POST",
-    });
-    if (response.ok) {
-      return await response.blob();
-    }
-  } catch (err) {
-    console.warn("PDF export endpoint error, using demo download:", err);
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/export`, { method: "POST" });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `PDF export failed with status ${response.status}`);
   }
-  return new Blob(
-    [`Clarify Labs Summary for Report ${reportId}\n\nDisclaimer: Prototype education only. Not a diagnosis.`],
-    { type: "text/plain" }
-  );
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/pdf")) {
+    throw new Error("The export service did not return a PDF.");
+  }
+  return response.blob();
 }
 
 export async function deletePatientData(patientId = "p_demo") {

@@ -11,20 +11,30 @@ export function TrendsView({ results, onBackToExplanation }) {
   const [selectedTest, setSelectedTest] = useState(availableTests[0] || "Hemoglobin");
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setError("");
     getTrends("p_demo", selectedTest)
       .then((data) => {
         if (isMounted) {
-          setTrendData(data);
+          setTrendData({
+            ...data,
+            points: data.points || (data.data || []).map((point) => ({ ...point, flag: null })),
+            description: data.description || data.trend_description,
+          });
           setLoading(false);
         }
       })
       .catch((err) => {
         console.error("Failed to load trends:", err);
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setTrendData(null);
+          setError(err.message || "Could not load confirmed trend data.");
+          setLoading(false);
+        }
       });
     return () => {
       isMounted = false;
@@ -92,7 +102,7 @@ export function TrendsView({ results, onBackToExplanation }) {
       <div className="trend-summary-box">
         <Info size={18} className="trend-info-icon" />
         <p className="trend-description-text">
-          {loading ? "Loading historical data..." : trendData?.description || "No sufficient historical points recorded yet."}
+          {loading ? "Loading historical data..." : error || trendData?.description || "No sufficient historical points recorded yet."}
         </p>
       </div>
 
