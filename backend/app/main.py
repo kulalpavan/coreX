@@ -7,7 +7,7 @@ from io import BytesIO
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
@@ -16,11 +16,13 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from .extraction import ExtractionError, process_report
 from .normalization import canonical_test_id
+from .storage import ReportStore
 
 
 DISCLAIMER = "Prototype education only. This summary is not a diagnosis. Discuss your results with a qualified clinician."
 ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 MAX_BYTES = 15 * 1024 * 1024
+DEFAULT_PATIENT_ID = "p_demo"
 
 app = FastAPI(title="Clarify Labs API", version="0.1.0")
 app.add_middleware(
@@ -30,7 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-reports: dict[str, dict[str, Any]] = {}
+reports = ReportStore()
 
 
 class TestResult(BaseModel):
@@ -46,6 +48,22 @@ class TestResult(BaseModel):
     extraction_confidence: float = Field(ge=0, le=1)
     user_corrected: bool = False
     explanation_text: str | None = None
+
+    @model_validator(mode="after")
+    def validate_result_fields(self) -> "TestResult":
+        if not self.raw_test_name.strip():
+            raise ValueError("raw_test_name cannot be empty")
+        if self.reference_range_low is not None and self.reference_range_high is not None:
+            if self.reference_range_low > self.reference_range_high:
+                raise ValueError("reference_range_low cannot exceed reference_range_high")
+        if self.report_date is not None:
+            try:
+                datetime.strptime(self.report_date, "%Y-%m-%d")
+            except ValueError as error:
+                raise ValueError("report_date must use YYYY-MM-DD format") from error
+        if self.flag not in {None, "H", "L", "normal"}:
+            raise ValueError("flag must be H, L, normal, or null")
+        return self
 
 
 class Confirmation(BaseModel):
@@ -95,16 +113,16 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         raise HTTPException(422, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
-    reports[report_id] = {
+    reports.create({
         "id": report_id,
         "filename": file.filename or "untitled-report",
         "source_type": processed["source_type"],
         "ocr_confidence": processed["ocr_confidence"],
-        "patient_id": "p_demo",
+        "patient_id": DEFAULT_PATIENT_ID,
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "results": processed["results"],
-    }
+    })
     return {"report_id": report_id, "status": "processing"}
 
 
@@ -252,5 +270,5 @@ def export_report(report_id: str) -> StreamingResponse:
 
 @app.delete("/api/patients/{patient_id}/data")
 def delete_data(patient_id: str) -> dict[str, str]:
-    reports.clear()
+    reports.delete_patient(patient_id)
     return {"status": "deleted", "patient_id": patient_id}

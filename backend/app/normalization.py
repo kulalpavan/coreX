@@ -41,15 +41,29 @@ def normalize_result(result: dict) -> dict:
     canonical_id = canonical_test_id(result["raw_test_name"])
     if canonical_id:
         normalized["canonical_test_id"] = canonical_id
-        normalized["value"], normalized["unit"] = _convert_value(
-            canonical_id, result.get("value"), result.get("unit")
-        )
+        conversion = _conversion_for(canonical_id, result.get("unit"))
+        if conversion is not None:
+            factor, canonical_unit = conversion
+            normalized["value"] = _convert_number(result.get("value"), factor)
+            normalized["reference_range_low"] = _convert_number(
+                result.get("reference_range_low"), factor
+            )
+            normalized["reference_range_high"] = _convert_number(
+                result.get("reference_range_high"), factor
+            )
+            normalized["unit"] = canonical_unit
     return normalized
 
 
-def _convert_value(canonical_id: str, value: float | None, unit: str | None) -> tuple[float | None, str | None]:
-    if value is None or unit is None:
-        return value, unit
+def _convert_number(value: float | None, factor: float) -> float | None:
+    if value is None:
+        return None
+    return round(value * factor, 3)
+
+
+def _conversion_for(canonical_id: str, unit: str | None) -> tuple[float, str] | None:
+    if unit is None:
+        return None
     source = unit.casefold().replace("μ", "u").replace("µ", "u")
     conversions = {
         ("glucose", "mmol/l"): (18.0, "mg/dL"),
@@ -59,8 +73,4 @@ def _convert_value(canonical_id: str, value: float | None, unit: str | None) -> 
         ("triglycerides", "mmol/l"): (88.57, "mg/dL"),
         ("creatinine", "umol/l"): (1 / 88.4, "mg/dL"),
     }
-    conversion = conversions.get((canonical_id, source))
-    if conversion is None:
-        return value, unit
-    factor, canonical_unit = conversion
-    return round(value * factor, 3), canonical_unit
+    return conversions.get((canonical_id, source))
