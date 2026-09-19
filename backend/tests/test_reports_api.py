@@ -96,3 +96,28 @@ def test_export_rejects_unconfirmed_report() -> None:
     response = client.post(f"/api/reports/{report_id}/export")
 
     assert response.status_code == 409
+
+
+def test_confirmation_rejects_invalid_reference_range() -> None:
+    report_id = create_report("2026-08-14", 13.8, status="pending_review")
+    invalid_result = confirmed_result("2026-08-14", 13.8) | {
+        "reference_range_low": 16.0,
+        "reference_range_high": 12.0,
+    }
+
+    response = client.post(f"/api/reports/{report_id}/confirm", json={"results": [invalid_result]})
+
+    assert response.status_code == 422
+    assert reports[report_id]["status"] == "pending_review"
+
+
+def test_delete_data_is_scoped_to_requested_patient() -> None:
+    own_report = create_report("2026-08-14", 13.8)
+    other_report = create_report("2026-08-15", 14.1)
+    reports[other_report]["patient_id"] = "p_other"
+
+    response = client.delete("/api/patients/p_demo/data")
+
+    assert response.status_code == 200
+    assert own_report not in reports
+    assert other_report in reports
