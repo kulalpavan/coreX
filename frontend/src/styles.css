@@ -361,6 +361,8 @@ h2 {
   border: 1px solid #d9d7d1;
   background: #fffdfa;
   margin-top: 16px;
+  display: flex;
+  flex-direction: column;
 }
 .review-source-grid {
   display: grid;
@@ -403,7 +405,9 @@ h2 {
   letter-spacing: .06em;
 }
 .source-preview pre {
-  max-height: 150px;
+  flex: 1;
+  min-height: 230px;
+  max-height: none;
   overflow: auto;
   margin: 0;
   padding: 14px;
