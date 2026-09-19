@@ -1,6 +1,8 @@
 import pytest
+import json
+from unittest.mock import patch
 
-from app.extraction_adapter import deterministic_to_schema, extract_with_fallback, structured_to_candidates, validate_model_output
+from app.extraction_adapter import LLMExtractionProvider, deterministic_to_schema, extract_with_fallback, structured_to_candidates, validate_model_output
 
 
 TEXT = "Report Date: 2026-08-14\nHemoglobin 13.8 g/dL 12.0 - 15.5 Normal"
@@ -72,3 +74,27 @@ def test_markdown_wrapped_provider_json_is_accepted() -> None:
 def test_unsafe_provider_payload_is_rejected(payload: dict) -> None:
     with pytest.raises(ValueError):
         validate_model_output(payload)
+
+
+def test_openrouter_free_provider_sends_chat_request_and_parses_response() -> None:
+    class Response:
+        def read(self) -> bytes:
+            return json.dumps({
+                "choices": [{"message": {"content": json.dumps({
+                    "report_date": None,
+                    "tests": [{
+                        "test_name": "TSH",
+                        "value": 2.4,
+                        "confidence": {"test_name": 0.9, "value": 0.9, "unit": 0.2, "reference_range": 0.2},
+                    }],
+                })}}]
+            }).encode()
+
+    provider = LLMExtractionProvider("https://openrouter.ai/api/v1/chat/completions", "test-key")
+    with patch("app.extraction_adapter.urlopen", return_value=Response()) as request:
+        result = provider.extract("TSH 2.4")
+
+    sent = json.loads(request.call_args.args[0].data.decode())
+    assert sent["model"] == "openrouter/free"
+    assert sent["response_format"] == {"type": "json_object"}
+    assert result["tests"][0]["test_name"] == "TSH"

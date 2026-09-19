@@ -105,20 +105,35 @@ Examples:
 
 
 class LLMExtractionProvider:
-    """Vendor-neutral JSON HTTP provider; disabled unless LLM_EXTRACTION_URL is configured."""
+    """OpenAI-compatible JSON provider; disabled unless an endpoint is configured."""
 
-    def __init__(self, endpoint: str, token: str | None = None, timeout: float = 15.0) -> None:
+    def __init__(self, endpoint: str, token: str | None = None, model: str = "openrouter/free", timeout: float = 15.0) -> None:
         self.endpoint = endpoint
         self.token = token
+        self.model = model
         self.timeout = timeout
 
     def extract(self, raw_text: str) -> dict[str, Any]:
-        body = json.dumps({"prompt": EXTRACTION_PROMPT, "text": raw_text}).encode("utf-8")
+        body = json.dumps(
+            {
+                "model": self.model,
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": EXTRACTION_PROMPT},
+                    {"role": "user", "content": raw_text},
+                ],
+            }
+        ).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         response = urlopen(Request(self.endpoint, data=body, headers=headers, method="POST"), timeout=self.timeout)
         payload = json.loads(response.read().decode("utf-8"))
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if choices and isinstance(choices[0], dict):
+            message = choices[0].get("message", {})
+            payload = message.get("content")
         if isinstance(payload, dict) and isinstance(payload.get("output"), str):
             payload = payload["output"]
         if isinstance(payload, str):
@@ -143,8 +158,15 @@ def _parse_json_text(raw: str) -> dict[str, Any]:
 
 
 def provider_from_environment() -> LLMExtractionProvider | None:
+    token = os.getenv("LLM_EXTRACTION_TOKEN")
     endpoint = os.getenv("LLM_EXTRACTION_URL")
-    return LLMExtractionProvider(endpoint, os.getenv("LLM_EXTRACTION_TOKEN")) if endpoint else None
+    if not token and not endpoint:
+        return None
+    return LLMExtractionProvider(
+        endpoint or "https://openrouter.ai/api/v1/chat/completions",
+        token,
+        os.getenv("LLM_EXTRACTION_MODEL", "openrouter/free"),
+    )
 
 
 def deterministic_to_schema(raw_text: str, ocr_confidence: float | None = None) -> StructuredExtraction:

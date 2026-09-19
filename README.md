@@ -34,7 +34,7 @@ For a fresh clone, run the backend tests with `cd backend; pytest -q` and the fr
 
 The backend health endpoint reports `ocr_available`, `tesseract_version`, and `pdf_text_extraction_available`. See [docs/ocr-setup.md](docs/ocr-setup.md) for Tesseract installation and [docs/real-report-evaluation.md](docs/real-report-evaluation.md) for adding local-only photographed reports and running field-level precision/recall evaluation.
 
-The optional extraction provider is disabled by default. To enable a vendor-neutral JSON endpoint, set `LLM_EXTRACTION_URL` and optionally `LLM_EXTRACTION_TOKEN`; invalid or failed responses automatically fall back to the deterministic parser.
+The optional extraction provider is disabled by default. To use OpenRouter's free router model, set `LLM_EXTRACTION_TOKEN`; it defaults to `https://openrouter.ai/api/v1/chat/completions` and model `openrouter/free`. You can override these with `LLM_EXTRACTION_URL` and `LLM_EXTRACTION_MODEL`. Invalid or failed responses automatically fall back to the deterministic parser.
 
 ## Prototype boundaries
 

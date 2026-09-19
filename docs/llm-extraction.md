@@ -1,6 +1,6 @@
 # Optional LLM Extraction Adapter
 
-The production upload flow remains deterministic by default. Set `LLM_EXTRACTION_URL` to opt into an HTTP JSON extraction provider. The endpoint receives:
+The production upload flow remains deterministic by default. Set `LLM_EXTRACTION_TOKEN` to opt into OpenRouter's free router model, or set `LLM_EXTRACTION_URL` for another OpenAI-compatible JSON provider. The default OpenRouter model is `openrouter/free`; override it with `LLM_EXTRACTION_MODEL`. The endpoint receives:
 
 ```json
 {"prompt":"...","text":"normalized report text"}
