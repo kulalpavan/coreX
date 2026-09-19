@@ -18,6 +18,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from .extraction import ExtractionError, process_report
 from .guardrail import guardrail
+from .ingestion import get_ocr_status, get_pdf_text_status
 from .normalization import canonical_test_id
 from .storage import ReportStore
 
@@ -98,8 +99,17 @@ def safe_explanation(result: dict[str, Any]) -> str:
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    ocr = get_ocr_status()
+    pdf = get_pdf_text_status()
+    return {
+        "status": "ok",
+        "ocr_available": ocr["available"],
+        "tesseract_version": ocr["version"],
+        "ocr_error": ocr["error"],
+        "pdf_text_extraction_available": pdf["available"],
+        "pdf_error": pdf["error"],
+    }
 
 
 @app.post("/api/reports/upload")

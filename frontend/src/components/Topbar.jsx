@@ -1,7 +1,7 @@
 import React from "react";
 import { Trash2 } from "lucide-react";
 
-export function Topbar({ onDeleteClick, apiStatus }) {
+export function Topbar({ onDeleteClick, apiStatus, ocrAvailable }) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -13,7 +13,13 @@ export function Topbar({ onDeleteClick, apiStatus }) {
       <div className="topbar-actions">
         <div className="prototype-tag">
           <span className={`status-dot ${apiStatus}`} />
-          {apiStatus === "online" ? "API online" : apiStatus === "offline" ? "API offline" : "Checking API"}
+          {apiStatus === "online"
+            ? ocrAvailable === false
+              ? "API online · OCR unavailable"
+              : "API online"
+            : apiStatus === "offline"
+              ? "API offline"
+              : "Checking API"}
         </div>
         {onDeleteClick && (
           <button className="delete-trigger-btn" onClick={onDeleteClick} title="Purge patient data">

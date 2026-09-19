@@ -40,10 +40,17 @@ function App() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [apiStatus, setApiStatus] = useState("checking");
+  const [ocrAvailable, setOcrAvailable] = useState(null);
 
   useEffect(() => {
     let active = true;
-    checkHealth().then(() => active && setApiStatus("online")).catch(() => active && setApiStatus("offline"));
+    checkHealth()
+      .then((health) => {
+        if (!active) return;
+        setApiStatus("online");
+        setOcrAvailable(health.ocr_available);
+      })
+      .catch(() => active && setApiStatus("offline"));
     return () => { active = false; };
   }, []);
 
@@ -219,7 +226,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <Topbar apiStatus={apiStatus} onDeleteClick={() => setDeleteModalOpen(true)} />
+      <Topbar apiStatus={apiStatus} ocrAvailable={ocrAvailable} onDeleteClick={() => setDeleteModalOpen(true)} />
 
       <section className="workspace">
         <Sidebar screen={screen} setScreen={setScreen} hasResults={results.length > 0} />

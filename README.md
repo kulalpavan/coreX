@@ -32,6 +32,8 @@ See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the recommended walkthrough and [docs/e
 
 For a fresh clone, run the backend tests with `cd backend; pytest -q` and the frontend build with `cd frontend; npm install; npm run build`. Image OCR additionally requires the Tesseract executable installed and available on `PATH`; text-based PDFs work without it.
 
+The backend health endpoint reports `ocr_available`, `tesseract_version`, and `pdf_text_extraction_available`. See [docs/ocr-setup.md](docs/ocr-setup.md) for Tesseract installation and [docs/real-report-evaluation.md](docs/real-report-evaluation.md) for adding local-only photographed reports and running field-level precision/recall evaluation.
+
 ## Prototype boundaries
 
 The ingestion adapter uses direct PDF text extraction and Tesseract/PyMuPDF OCR when those local dependencies are available. The sample report is an explicit demo action, not an upload fallback. LLM extraction, authentication, cloud storage, and production privacy controls remain future work. This is not a certified medical device and does not provide diagnosis or treatment advice.

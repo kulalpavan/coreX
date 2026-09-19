@@ -15,6 +15,31 @@ class IngestionResult:
     error: str | None = None
 
 
+def get_ocr_status() -> dict[str, str | bool | None]:
+    """Report OCR readiness without making OCR a startup requirement."""
+    try:
+        import pytesseract
+    except ImportError:
+        return {"available": False, "version": None, "error": "pytesseract is not installed."}
+    try:
+        version = str(pytesseract.get_tesseract_version()).splitlines()[0]
+        return {"available": True, "version": version, "error": None}
+    except Exception:
+        return {
+            "available": False,
+            "version": None,
+            "error": "Tesseract executable is not installed or is not on PATH.",
+        }
+
+
+def get_pdf_text_status() -> dict[str, str | bool | None]:
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        return {"available": False, "error": "PyMuPDF is not installed."}
+    return {"available": True, "error": None}
+
+
 def classify_file(content_type: str | None, filename: str | None = None) -> str:
     if content_type == "application/pdf" or (filename or "").lower().endswith(".pdf"):
         return "pdf"
