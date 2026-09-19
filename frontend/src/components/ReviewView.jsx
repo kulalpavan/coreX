@@ -35,7 +35,18 @@ export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceT
       <div className="review-source-grid">
         <div className="source-preview" aria-label="Original report preview">
           <div className="source-preview-header"><span>Original report</span><span>{sourceType || "source"}</span></div>
-          {reportId && sourceType?.startsWith("pdf") ? <iframe title="Original report" src={getSourceFileUrl(reportId)} /> : reportId ? <img alt="Original uploaded report" src={getSourceFileUrl(reportId)} /> : <pre>Sample report mode has no original file.</pre>}
+          {reportId && sourceType?.startsWith("pdf") ? (
+            <>
+              <iframe title="Original report" src={getSourceFileUrl(reportId)} />
+              <a className="source-open-link" href={getSourceFileUrl(reportId)} target="_blank" rel="noreferrer">
+                Open original report in a new tab
+              </a>
+            </>
+          ) : reportId ? (
+            <img alt="Original uploaded report" src={getSourceFileUrl(reportId)} />
+          ) : (
+            <pre>Sample report mode has no original file.</pre>
+          )}
         </div>
         <div className="source-preview" aria-label="Extracted source text">
           <div className="source-preview-header"><span>Source text</span><span>{reportDate || "date unavailable"}</span></div>
