@@ -52,7 +52,7 @@ function App() {
   async function handleLoadReport(file) {
     setError("");
     if (!file) {
-      // Demo mode fallback
+      // Use the local sample report only when the user explicitly selects the demo path.
       setFileName("demo-lab-report.pdf");
       setResults(sampleDemoResults);
       setReportId(null);
