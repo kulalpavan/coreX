@@ -1,19 +1,17 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { AlertCircle, ArrowUpRight, UploadCloud } from "lucide-react";
 
 export function UploadView({ onFileSelect, error }) {
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState("");
+  const fileInputRef = useRef(null);
 
   const MAX_BYTES = 15 * 1024 * 1024; // 15MB
   const ALLOWED_EXT = [".pdf", ".jpg", ".jpeg", ".png"];
 
   function validateAndSubmit(file) {
     setLocalError("");
-    if (!file) {
-      onFileSelect(null); // Demo mode
-      return;
-    }
+    if (!file) return;
 
     const name = file.name.toLowerCase();
     const isAllowed = ALLOWED_EXT.some((ext) => name.endsWith(ext));
@@ -53,6 +51,10 @@ export function UploadView({ onFileSelect, error }) {
     }
   }
 
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
   const activeError = localError || error;
 
   return (
@@ -68,26 +70,28 @@ export function UploadView({ onFileSelect, error }) {
         <span className="page-index">01 / 03</span>
       </div>
 
-      <label
+      <div
         className={`dropzone ${isDragging ? "dragging" : ""}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         <input
+          ref={fileInputRef}
           type="file"
+          id="report-file-input"
           accept=".pdf,.jpg,.jpeg,.png"
           onChange={(event) => validateAndSubmit(event.target.files?.[0])}
         />
         <UploadCloud size={32} strokeWidth={1.4} />
         <strong>{isDragging ? "Drop file to upload" : "Drop a report here"}</strong>
         <span>or choose a PDF, JPG, or PNG · up to 15 MB</span>
-        <button type="button" tabIndex={-1}>
+        <button type="button" onClick={openFilePicker}>
           Choose file
         </button>
-      </label>
+      </div>
 
-      <button className="demo-link" onClick={() => validateAndSubmit(null)}>
+      <button className="demo-link" onClick={() => onFileSelect(null)}>
         Explore with a sample report <ArrowUpRight size={15} />
       </button>
 
