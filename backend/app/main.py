@@ -57,6 +57,8 @@ class TestResult(BaseModel):
     flag: str | None = None
     report_date: str | None = None
     extraction_confidence: float = Field(ge=0, le=1)
+    field_confidence: dict[str, float] | None = None
+    review_required: bool = False
     user_corrected: bool = False
     explanation_text: str | None = None
 
