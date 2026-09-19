@@ -1,12 +1,18 @@
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 import re
+from io import BytesIO
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 DISCLAIMER = "Prototype education only. This summary is not a diagnosis. Discuss your results with a qualified clinician."
@@ -27,6 +33,7 @@ reports: dict[str, dict[str, Any]] = {}
 class TestResult(BaseModel):
     id: str | None = None
     raw_test_name: str
+    canonical_test_id: str | None = None
     value: float | None = None
     unit: str | None = None
     reference_range_low: float | None = None
@@ -53,6 +60,7 @@ def sample_results() -> list[dict[str, Any]]:
         {
             "id": f"result_{index}",
             "raw_test_name": name,
+            "canonical_test_id": canonicalize_test_name(name),
             "value": value,
             "unit": unit,
             "reference_range_low": low,
@@ -77,6 +85,7 @@ def extract_results(raw_text: str) -> list[dict[str, Any]]:
             {
                 "id": f"result_{index}",
                 "raw_test_name": match.group("name").strip(),
+                "canonical_test_id": canonicalize_test_name(match.group("name").strip()),
                 "value": float(match.group("value")),
                 "unit": match.group("unit"),
                 "reference_range_low": None,
@@ -91,6 +100,22 @@ def extract_results(raw_text: str) -> list[dict[str, Any]]:
     return matches or sample_results()
 
 
+CANONICAL_TESTS = {
+    "hemoglobin": "hemoglobin",
+    "hb": "hemoglobin",
+    "hgb": "hemoglobin",
+    "total cholesterol": "total_cholesterol",
+    "cholesterol": "total_cholesterol",
+    "tsh": "tsh",
+    "alt": "alt",
+}
+
+
+def canonicalize_test_name(raw_name: str) -> str:
+    normalized = " ".join(raw_name.lower().split())
+    return CANONICAL_TESTS.get(normalized, normalized.replace(" ", "_"))
+
+
 def safe_explanation(result: dict[str, Any]) -> str:
     name = result["raw_test_name"]
     value = result.get("value")
@@ -101,7 +126,8 @@ def safe_explanation(result: dict[str, Any]) -> str:
         position = "within" if low <= value <= high else "above" if value > high else "below"
         range_text = f"the reported range of {low:g}–{high:g} {unit}".strip()
         return f"{name} is a measurement recorded as {value:g} {unit}. This is {position} {range_text}. Discuss this result with your clinician for personal context."
-    return f"{name} is recorded as {value:g} {unit}. The report does not include enough range information for a comparison. Discuss this result with your clinician for personal context."
+    value_text = f"{value:g}" if isinstance(value, (int, float)) else "not available"
+    return f"{name} is recorded as {value_text} {unit}. The report does not include enough range information for a comparison. Discuss this result with your clinician for personal context."
 
 
 def guardrail(text: str) -> str:
@@ -130,6 +156,7 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         "id": report_id,
         "filename": file.filename or "untitled-report",
         "source_type": "pdf_text" if file.content_type == "application/pdf" else "image",
+        "patient_id": "p_demo",
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "results": results,
@@ -150,7 +177,14 @@ def confirm_report(report_id: str, body: Confirmation) -> dict[str, Any]:
     report = reports.get(report_id)
     if not report:
         raise HTTPException(404, "Report not found.")
-    report["results"] = [item.model_dump() | {"id": item.id or f"result_{index}"} for index, item in enumerate(body.results, 1)]
+    report["results"] = [
+        item.model_dump()
+        | {
+            "id": item.id or f"result_{index}",
+            "canonical_test_id": item.canonical_test_id or canonicalize_test_name(item.raw_test_name),
+        }
+        for index, item in enumerate(body.results, 1)
+    ]
     for result in report["results"]:
         result["explanation_text"] = guardrail(safe_explanation(result))
     report["status"] = "confirmed"
@@ -163,6 +197,113 @@ def get_explanations(report_id: str) -> dict[str, Any]:
     if not report or report["status"] != "confirmed":
         raise HTTPException(409, "Confirm the report before viewing explanations.")
     return {"report_id": report_id, "results": report["results"], "disclaimer": DISCLAIMER}
+
+
+@app.get("/api/patients/{patient_id}/trends/{canonical_test_id}")
+def get_trend(patient_id: str, canonical_test_id: str) -> dict[str, Any]:
+    target_id = canonicalize_test_name(canonical_test_id)
+    points = []
+    for report in reports.values():
+        if report["patient_id"] != patient_id or report["status"] != "confirmed":
+            continue
+        for result in report["results"]:
+            result_id = result.get("canonical_test_id") or canonicalize_test_name(result["raw_test_name"])
+            if result_id.lower() != target_id or result.get("value") is None or not result.get("report_date"):
+                continue
+            points.append(
+                {
+                    "date": result["report_date"],
+                    "value": result["value"],
+                    "unit": result.get("unit") or "",
+                    "flag": result.get("flag"),
+                }
+            )
+    points.sort(key=lambda point: point["date"])
+    has_sufficient_data = len(points) >= 2
+    data = [{"date": point["date"], "value": point["value"], "unit": point["unit"]} for point in points] if has_sufficient_data else []
+    if not has_sufficient_data:
+        description = "Not enough confirmed data points are available for this test."
+    else:
+        description = f"This value moved from {data[0]['value']} {data[0]['unit']} on {data[0]['date']} to {data[-1]['value']} {data[-1]['unit']} on {data[-1]['date']}."
+    return {
+        "canonical_test_id": target_id,
+        "data": data,
+        "trend_description": description,
+        "points": points if has_sufficient_data else [],
+        "description": description,
+    }
+
+
+def _pdf_value(value: Any) -> str:
+    return "Not available" if value is None else str(value)
+
+
+def _draw_disclaimer(canvas: Any, document: Any) -> None:
+    canvas.saveState()
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(colors.HexColor("#795e49"))
+    canvas.drawString(document.leftMargin, 0.45 * inch, DISCLAIMER)
+    canvas.setStrokeColor(colors.HexColor("#d5c9b8"))
+    canvas.line(document.leftMargin, 0.62 * inch, letter[0] - document.rightMargin, 0.62 * inch)
+    canvas.restoreState()
+
+
+@app.post("/api/reports/{report_id}/export")
+def export_report(report_id: str) -> StreamingResponse:
+    report = reports.get(report_id)
+    if not report:
+        raise HTTPException(404, "Report not found.")
+    if report["status"] != "confirmed":
+        raise HTTPException(409, "Confirm the report before exporting it.")
+
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Clarify Labs Patient Summary", styles["Title"]),
+        Paragraph(f"Report: {report['filename']}", styles["Normal"]),
+        Paragraph(f"Patient profile: {report['patient_id']}", styles["Normal"]),
+        Spacer(1, 0.2 * inch),
+    ]
+    table_data = [["Test", "Value", "Unit", "Reference range", "Flag"]]
+    for result in report["results"]:
+        low = _pdf_value(result.get("reference_range_low"))
+        high = _pdf_value(result.get("reference_range_high"))
+        table_data.append(
+            [
+                result["raw_test_name"],
+                _pdf_value(result.get("value")),
+                _pdf_value(result.get("unit")),
+                f"{low} - {high}",
+                _pdf_value(result.get("flag")),
+            ]
+        )
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#155c51")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d9d7d1")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f0eb")]),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 0.25 * inch))
+    story.append(Paragraph("Plain-language explanations", styles["Heading2"]))
+    for result in report["results"]:
+        story.append(Paragraph(f"<b>{result['raw_test_name']}</b>: {result.get('explanation_text') or safe_explanation(result)}", styles["BodyText"]))
+        story.append(Spacer(1, 0.1 * inch))
+
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=letter, bottomMargin=0.85 * inch)
+    document.build(story, onFirstPage=_draw_disclaimer, onLaterPages=_draw_disclaimer)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="clarify-labs-{report_id}.pdf"'},
+    )
 
 
 @app.delete("/api/patients/{patient_id}/data")
