@@ -6,6 +6,7 @@ from typing import Any
 
 
 DEFAULT_DATABASE_PATH = Path(__file__).resolve().parent.parent / "storage" / "reports.sqlite3"
+DEFAULT_FILE_DIRECTORY = Path(__file__).resolve().parent.parent / "storage" / "uploads"
 
 
 class ReportStore(MutableMapping[str, dict[str, Any]]):
@@ -14,6 +15,8 @@ class ReportStore(MutableMapping[str, dict[str, Any]]):
     def __init__(self, database_path: str | Path = DEFAULT_DATABASE_PATH) -> None:
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self.file_directory = self.database_path.parent / "uploads"
+        self.file_directory.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute(
@@ -59,9 +62,13 @@ class ReportStore(MutableMapping[str, dict[str, Any]]):
         self._persist(report)
 
     def __delitem__(self, report_id: str) -> None:
+        report = self._reports[report_id]
         del self._reports[report_id]
         self._connection.execute("DELETE FROM reports WHERE id = ?", (report_id,))
         self._connection.commit()
+        raw_file_path = report.get("raw_file_path")
+        if raw_file_path:
+            Path(raw_file_path).unlink(missing_ok=True)
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._reports)

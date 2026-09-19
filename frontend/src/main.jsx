@@ -26,6 +26,8 @@ function App() {
   const [fileName, setFileName] = useState("");
   const [results, setResults] = useState([]);
   const [sourceText, setSourceText] = useState("");
+  const [sourceType, setSourceType] = useState("");
+  const [reportDate, setReportDate] = useState("");
   const [reportId, setReportId] = useState(null);
   const [patientId] = useState("p_demo");
   const [disclaimer, setDisclaimer] = useState("");
@@ -77,6 +79,8 @@ function App() {
 
       setResults(extractionRes.results || []);
       setSourceText(sourceRes.raw_text || "");
+      setSourceType(extractionRes.source_type || sourceRes.source_type || "");
+      setReportDate(extractionRes.report_date || sourceRes.report_date || "");
       setScreen("review");
     } catch (err) {
       console.error("Upload error:", err);
@@ -211,6 +215,9 @@ function App() {
           {screen === "review" && (
             <ReviewView
               fileName={fileName}
+              reportId={reportId}
+              sourceType={sourceType}
+              reportDate={reportDate}
               sourceText={sourceText}
               results={results}
               onUpdate={handleUpdateResult}

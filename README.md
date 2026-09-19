@@ -28,7 +28,7 @@ Open the Vite URL shown in the terminal. The frontend uses `http://localhost:800
 
 Upload a report, review the retained source text beside the extracted fields, correct any low-confidence values, confirm the report, read the guarded explanation, view trends after two confirmed data points, and export a disclaimer-bearing PDF. The extraction parser recognizes common tabular CBC, lipid, and thyroid rows while filtering report metadata. Confirmed reports are stored in local SQLite at `backend/storage/reports.sqlite3`.
 
-See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the recommended walkthrough and [docs/extraction-evaluation.md](docs/extraction-evaluation.md) for the current anonymized evaluation set.
+See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the recommended walkthrough and [docs/extraction-evaluation.md](docs/extraction-evaluation.md) for the current anonymized evaluation set. The architecture is documented in [Implementation/system_design.md](Implementation/system_design.md).
 
 ## Prototype boundaries
 

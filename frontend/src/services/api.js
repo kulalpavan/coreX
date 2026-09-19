@@ -90,6 +90,10 @@ export async function getSource(reportId) {
   return response.json();
 }
 
+export function getSourceFileUrl(reportId) {
+  return `${API_URL}/api/reports/${reportId}/source-file`;
+}
+
 export async function confirmReport(reportId, results) {
   const response = await fetch(`${API_URL}/api/reports/${reportId}/confirm`, {
     method: "POST",

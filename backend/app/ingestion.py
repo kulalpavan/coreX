@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from io import BytesIO
 
 
+MIN_OCR_CONFIDENCE = 0.25
+
+
 @dataclass
 class IngestionResult:
     text: str
@@ -91,9 +94,13 @@ def ingest_document(payload: bytes, content_type: str | None, filename: str | No
         text, confidence = _ocr_payload(payload, "pdf_scanned")
         if not text:
             return IngestionResult("", "pdf_scanned", confidence, "The PDF could not be read.")
+        if confidence is not None and confidence < MIN_OCR_CONFIDENCE:
+            return IngestionResult("", "pdf_scanned", confidence, "The scanned PDF was too unclear to read confidently. Please upload a clearer scan.")
         return IngestionResult(text, "pdf_scanned", confidence)
 
     text, confidence = _ocr_payload(payload, "image")
     if not text:
         return IngestionResult("", "image", confidence, "The image could not be read.")
+    if confidence is not None and confidence < MIN_OCR_CONFIDENCE:
+        return IngestionResult("", "image", confidence, "The image was too unclear to read confidently. Please upload a clearer scan.")
     return IngestionResult(text, "image", confidence)

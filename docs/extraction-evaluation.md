@@ -8,7 +8,17 @@ This is the initial anonymized evaluation set for the prototype extraction bound
 | `noisy_report.txt` | Missing value and implausible numeric value | Keep rows reviewable and lower confidence; never invent a value |
 | Direct test cases | Missing units, missing ranges, unknown text, safe conversions | Return nulls/errors clearly and preserve unsupported units |
 
-The automated checks live in `backend/tests/test_extraction.py` and `backend/tests/test_backend_regressions.py`. They currently verify schema behavior, low-confidence handling, canonical mapping, safe unit conversion, unsupported conversion preservation, patient-scoped deletion, and SQLite reload behavior.
+The automated checks live in `backend/tests/test_extraction.py`, `backend/tests/test_evaluation.py`, and `backend/tests/test_end_to_end.py`. They verify schema behavior, low-confidence handling, canonical mapping, safe unit conversion, unsupported conversion preservation, patient-scoped deletion, SQLite reload behavior, and the complete upload-to-delete workflow.
+
+The current three-fixture baseline is:
+
+| Fixture set | Field-name precision | Field-name recall |
+|---|---:|---:|
+| Clean typed report | 1.00 | 1.00 |
+| Clarify Labs 10-row table | 1.00 | 1.00 |
+| OCR-noisy report | 1.00 | 1.00 |
+
+These are deterministic anonymized fixtures, not a claim about production accuracy. More photographed reports must be labeled before using these numbers as a broader quality estimate.
 
 A future labeled-report pass should add, for each field, the expected value and the extracted value, then record:
 

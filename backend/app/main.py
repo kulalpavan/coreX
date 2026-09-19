@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 import re
@@ -7,6 +8,7 @@ from io import BytesIO
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -24,6 +26,13 @@ DISCLAIMER = "Prototype education only. This summary is not a diagnosis. Discuss
 ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 MAX_BYTES = 15 * 1024 * 1024
 DEFAULT_PATIENT_ID = "p_demo"
+
+
+def _file_extension(filename: str | None, content_type: str | None) -> str:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in {".pdf", ".jpg", ".jpeg", ".png"}:
+        return suffix
+    return {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[content_type or ""]
 
 app = FastAPI(title="Clarify Labs API", version="0.1.0")
 app.add_middleware(
@@ -111,13 +120,17 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         "id": report_id,
         "filename": file.filename or "untitled-report",
         "source_type": processed["source_type"],
+        "content_type": file.content_type,
         "ocr_confidence": processed["ocr_confidence"],
         "raw_text": processed.get("raw_text", ""),
+        "report_date": next((result.get("report_date") for result in processed["results"] if result.get("report_date")), None),
+        "raw_file_path": str(reports.file_directory / f"{report_id}{_file_extension(file.filename, file.content_type)}"),
         "patient_id": DEFAULT_PATIENT_ID,
         "status": "pending_review",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "results": processed["results"],
     })
+    Path(reports[report_id]["raw_file_path"]).write_bytes(payload)
     return {"report_id": report_id, "status": "processing"}
 
 
@@ -131,6 +144,7 @@ def get_extraction(report_id: str) -> dict[str, Any]:
         "filename": report["filename"],
         "status": report["status"],
         "source_type": report["source_type"],
+        "report_date": report.get("report_date"),
         "results": report["results"],
     }
 
@@ -144,8 +158,21 @@ def get_source(report_id: str) -> dict[str, Any]:
         "report_id": report_id,
         "filename": report["filename"],
         "source_type": report["source_type"],
+        "report_date": report.get("report_date"),
         "raw_text": report.get("raw_text", ""),
     }
+
+
+@app.get("/api/reports/{report_id}/source-file")
+def get_source_file(report_id: str) -> FileResponse:
+    report = reports.get(report_id)
+    if not report:
+        raise HTTPException(404, "Report not found.")
+    source_path = Path(report.get("raw_file_path", ""))
+    if not source_path.is_file():
+        raise HTTPException(404, "The original report file is no longer available.")
+    media_type = report.get("content_type", "application/octet-stream")
+    return FileResponse(source_path, media_type=media_type, filename=report["filename"])
 
 
 @app.post("/api/reports/{report_id}/confirm")

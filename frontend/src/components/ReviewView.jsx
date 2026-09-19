@@ -1,5 +1,6 @@
 import React from "react";
 import { AlertCircle, ArrowUpRight, FileText, Plus, Trash2 } from "lucide-react";
+import { getSourceFileUrl } from "../services/api";
 
 function confidenceLabel(value) {
   if (value >= 0.9) return "High confidence";
@@ -7,7 +8,7 @@ function confidenceLabel(value) {
   return "Needs review";
 }
 
-export function ReviewView({ fileName, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
+export function ReviewView({ fileName, reportId, sourceType, reportDate, sourceText, results, onUpdate, onAddRow, onDeleteRow, onConfirm, error }) {
   const lowConfidenceCount = results.filter((r) => r.extraction_confidence < 0.8).length;
 
   return (
@@ -31,9 +32,15 @@ export function ReviewView({ fileName, sourceText, results, onUpdate, onAddRow, 
         <span>{results.length} values found</span>
       </div>
 
-      <div className="source-preview" aria-label="Extracted source text">
-        <div className="source-preview-header"><span>Source text</span><span>Read-only evidence</span></div>
-        <pre>{sourceText || "No readable source text was returned. Review the extracted fields manually."}</pre>
+      <div className="review-source-grid">
+        <div className="source-preview" aria-label="Original report preview">
+          <div className="source-preview-header"><span>Original report</span><span>{sourceType || "source"}</span></div>
+          {reportId && sourceType?.startsWith("pdf") ? <iframe title="Original report" src={getSourceFileUrl(reportId)} /> : reportId ? <img alt="Original uploaded report" src={getSourceFileUrl(reportId)} /> : <pre>Sample report mode has no original file.</pre>}
+        </div>
+        <div className="source-preview" aria-label="Extracted source text">
+          <div className="source-preview-header"><span>Source text</span><span>{reportDate || "date unavailable"}</span></div>
+          <pre>{sourceText || "No readable source text was returned. Review the extracted fields manually."}</pre>
+        </div>
       </div>
 
       <div className="review-table-wrap">
