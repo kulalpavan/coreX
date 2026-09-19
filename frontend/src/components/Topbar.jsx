@@ -1,7 +1,7 @@
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { MessageCircle, Trash2 } from "lucide-react";
 
-export function Topbar({ onDeleteClick, apiStatus, ocrAvailable }) {
+export function Topbar({ onDeleteClick, onChatClick, apiStatus, ocrAvailable }) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -21,6 +21,12 @@ export function Topbar({ onDeleteClick, apiStatus, ocrAvailable }) {
               ? "API offline"
               : "Checking API"}
         </div>
+        {onChatClick && (
+          <button className="chat-trigger-btn" onClick={onChatClick} title="Ask about this report">
+            <MessageCircle size={14} />
+            <span>Ask about report</span>
+          </button>
+        )}
         {onDeleteClick && (
           <button className="delete-trigger-btn" onClick={onDeleteClick} title="Purge patient data">
             <Trash2 size={14} />

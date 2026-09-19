@@ -226,7 +226,12 @@ function App() {
 
   return (
     <main className="app-shell">
-      <Topbar apiStatus={apiStatus} ocrAvailable={ocrAvailable} onDeleteClick={() => setDeleteModalOpen(true)} />
+      <Topbar
+        apiStatus={apiStatus}
+        ocrAvailable={ocrAvailable}
+        onChatClick={reportId && (screen === "explanation" || screen === "trends") ? () => setScreen("explanation") : null}
+        onDeleteClick={() => setDeleteModalOpen(true)}
+      />
 
       <section className="workspace">
         <Sidebar screen={screen} setScreen={setScreen} hasResults={results.length > 0} />

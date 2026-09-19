@@ -101,6 +101,18 @@ button {
   gap: 6px;
   transition: all 0.2s ease;
 }
+.chat-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #b9c7bf;
+  background: #edf4ef;
+  color: #155c51;
+  padding: 8px 11px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.chat-trigger-btn:hover { background: #dfece3; }
 .delete-trigger-btn:hover {
   background: #fbebe8;
   border-color: #e86f51;
