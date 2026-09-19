@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+from dataclasses import dataclass
 from datetime import date
 from urllib.request import Request, urlopen
 from typing import Any, Protocol
@@ -89,6 +90,14 @@ class StructuredExtraction(BaseModel):
 
 class ModelExtractionProvider(Protocol):
     def extract(self, raw_text: str) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class ExtractionRun:
+    results: list[dict[str, Any]]
+    provider: str
+    fallback_used: bool
+    fallback_reason: str | None = None
 
 
 EXTRACTION_PROMPT = """Extract only laboratory test information from the report text.
@@ -238,7 +247,64 @@ def extract_with_fallback(raw_text: str, provider: ModelExtractionProvider | Non
     return deterministic_to_schema(raw_text, ocr_confidence)
 
 
+def _candidate_key(candidate: dict[str, Any]) -> str:
+    return (candidate.get("canonical_test_id") or candidate.get("raw_test_name", "")).casefold()
+
+
+def merge_provider_results(deterministic: list[dict[str, Any]], model: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep deterministic values on conflict and surface the disagreement for review."""
+    model_by_key = {_candidate_key(item): item for item in model}
+    merged = []
+    for item in deterministic:
+        candidate = dict(item)
+        model_item = model_by_key.pop(_candidate_key(item), None)
+        if model_item:
+            conflicts = any(
+                candidate.get(field) != model_item.get(field)
+                for field in ("value", "unit", "reference_range_low", "reference_range_high")
+            )
+            if conflicts:
+                candidate["review_required"] = True
+                candidate["extraction_conflict"] = True
+        merged.append(candidate)
+    for item in model_by_key.values():
+        candidate = dict(item)
+        candidate["review_required"] = True
+        candidate["extraction_conflict"] = True
+        merged.append(candidate)
+    return merged
+
+
+def _call_provider_with_retry(provider: ModelExtractionProvider, raw_text: str) -> StructuredExtraction:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            payload = provider.extract(raw_text)
+            if isinstance(payload, str):
+                payload = _parse_json_text(payload)
+            return validate_model_output(payload)
+        except Exception as error:
+            last_error = error
+            if attempt == 0:
+                continue
+    raise last_error or ValueError("provider failed")
+
+
+def extract_report_results_with_metadata(raw_text: str, ocr_confidence: float | None = None) -> ExtractionRun:
+    deterministic = [normalize_result(item) for item in extract_candidates(raw_text, ocr_confidence)]
+    provider = provider_from_environment()
+    if provider is None:
+        return ExtractionRun(deterministic, "deterministic", False)
+    try:
+        model = structured_to_candidates(_call_provider_with_retry(provider, raw_text))
+        merged = merge_provider_results(deterministic, model)
+        return ExtractionRun(merged, "openrouter", False)
+    except TimeoutError:
+        return ExtractionRun(deterministic, "deterministic", True, "timeout")
+    except (ValueError, TypeError, KeyError, OSError) as error:
+        return ExtractionRun(deterministic, "deterministic", True, type(error).__name__.lower())
+
+
 def extract_report_results(raw_text: str, ocr_confidence: float | None = None) -> list[dict[str, Any]]:
     """Use configured LLM output only when valid; otherwise use the local parser."""
-    extraction = extract_with_fallback(raw_text, provider_from_environment(), ocr_confidence)
-    return structured_to_candidates(extraction)
+    return extract_report_results_with_metadata(raw_text, ocr_confidence).results

@@ -26,16 +26,15 @@ def process_report(payload: bytes, content_type: str | None, filename: str | Non
     ingestion = ingest_document(payload, content_type, filename)
     if ingestion.error:
         raise ExtractionError(ingestion.error)
-    from .extraction_adapter import extract_report_results, provider_from_environment
+    from .extraction_adapter import extract_report_results_with_metadata
 
-    results = (
-        extract_report_results(ingestion.text, ingestion.ocr_confidence)
-        if provider_from_environment() is not None
-        else extract_candidates(ingestion.text, ingestion.ocr_confidence)
-    )
+    extraction_run = extract_report_results_with_metadata(ingestion.text, ingestion.ocr_confidence)
     return {
         "raw_text": ingestion.text,
-        "results": results,
+        "results": extraction_run.results,
+        "extraction_provider": extraction_run.provider,
+        "fallback_used": extraction_run.fallback_used,
+        "fallback_reason": extraction_run.fallback_reason,
         "source_type": ingestion.source_type,
         "ocr_confidence": ingestion.ocr_confidence,
     }

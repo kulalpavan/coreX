@@ -134,6 +134,9 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         "source_type": processed["source_type"],
         "content_type": file.content_type,
         "ocr_confidence": processed["ocr_confidence"],
+        "extraction_provider": processed.get("extraction_provider", "deterministic"),
+        "fallback_used": processed.get("fallback_used", False),
+        "fallback_reason": processed.get("fallback_reason"),
         "raw_text": processed.get("raw_text", ""),
         "report_date": next((result.get("report_date") for result in processed["results"] if result.get("report_date")), None),
         "raw_file_path": str(reports.file_directory / f"{report_id}{_file_extension(file.filename, file.content_type)}"),
@@ -157,6 +160,9 @@ def get_extraction(report_id: str) -> dict[str, Any]:
         "status": report["status"],
         "source_type": report["source_type"],
         "report_date": report.get("report_date"),
+        "extraction_provider": report.get("extraction_provider", "deterministic"),
+        "fallback_used": report.get("fallback_used", False),
+        "fallback_reason": report.get("fallback_reason"),
         "results": report["results"],
     }
 

@@ -2,7 +2,7 @@ import pytest
 import json
 from unittest.mock import patch
 
-from app.extraction_adapter import LLMExtractionProvider, deterministic_to_schema, extract_with_fallback, structured_to_candidates, validate_model_output
+from app.extraction_adapter import LLMExtractionProvider, deterministic_to_schema, extract_report_results_with_metadata, extract_with_fallback, merge_provider_results, structured_to_candidates, validate_model_output
 
 
 TEXT = "Report Date: 2026-08-14\nHemoglobin 13.8 g/dL 12.0 - 15.5 Normal"
@@ -98,3 +98,14 @@ def test_openrouter_free_provider_sends_chat_request_and_parses_response() -> No
     assert sent["model"] == "openrouter/free"
     assert sent["response_format"] == {"type": "json_object"}
     assert result["tests"][0]["test_name"] == "TSH"
+
+
+def test_conflicting_provider_value_keeps_deterministic_value_and_flags_review() -> None:
+    deterministic = [{"raw_test_name": "Hemoglobin", "canonical_test_id": "hemoglobin", "value": 13.4, "unit": "g/dL", "reference_range_low": 12.0, "reference_range_high": 15.5}]
+    model = [{"raw_test_name": "Hemoglobin", "canonical_test_id": "hemoglobin", "value": 14.4, "unit": "g/dL", "reference_range_low": 12.0, "reference_range_high": 15.5}]
+
+    merged = merge_provider_results(deterministic, model)
+
+    assert merged[0]["value"] == 13.4
+    assert merged[0]["review_required"] is True
+    assert merged[0]["extraction_conflict"] is True
