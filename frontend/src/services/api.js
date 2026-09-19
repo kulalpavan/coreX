@@ -122,6 +122,17 @@ export async function getExplanations(reportId) {
   return response.json();
 }
 
+export async function askReportQuestion(reportId, question) {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || "Could not ask about this report.");
+  return payload;
+}
+
 export async function getTrends(patientId = "p_demo", canonicalTestId = "Hemoglobin") {
   const response = await fetch(`${API_URL}/api/patients/${patientId}/trends/${encodeURIComponent(canonicalTestId)}`);
   if (!response.ok) {

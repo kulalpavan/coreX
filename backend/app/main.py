@@ -18,6 +18,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from .explanations import explain_result
 from .extraction import ExtractionError, process_report
+from .clinical_chat import answer_question
 from .guardrail import guardrail
 from .ingestion import get_ocr_status, get_pdf_text_status
 from .normalization import canonical_test_id
@@ -82,6 +83,10 @@ class TestResult(BaseModel):
 
 class Confirmation(BaseModel):
     results: list[TestResult]
+
+
+class ChatQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
 
 
 def canonicalize_test_name(raw_name: str) -> str:
@@ -211,6 +216,14 @@ def get_explanations(report_id: str) -> dict[str, Any]:
     if not report or report["status"] != "confirmed":
         raise HTTPException(409, "Confirm the report before viewing explanations.")
     return {"report_id": report_id, "results": report["results"], "disclaimer": DISCLAIMER}
+
+
+@app.post("/api/reports/{report_id}/chat")
+def chat_about_report(report_id: str, body: ChatQuestion) -> dict[str, Any]:
+    report = reports.get(report_id)
+    if not report or report["status"] != "confirmed":
+        raise HTTPException(409, "Confirm the report before asking questions about it.")
+    return answer_question(body.question, report)
 
 
 @app.get("/api/patients/{patient_id}/trends/{canonical_test_id}")

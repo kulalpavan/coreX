@@ -1,8 +1,9 @@
 import React from "react";
 import { ArrowUpRight, Download, LineChart, RotateCcw, UserCheck } from "lucide-react";
 import { DisclaimerBanner } from "./DisclaimerBanner";
+import { ReportChat } from "./ReportChat";
 
-export function ExplanationView({ results, disclaimer, onExportPdf, onViewTrends, onRestart }) {
+export function ExplanationView({ results, reportId, disclaimer, onExportPdf, onViewTrends, onRestart }) {
   return (
     <div className="view explanation-view">
       <div className="view-header compact">
@@ -17,6 +18,8 @@ export function ExplanationView({ results, disclaimer, onExportPdf, onViewTrends
       </div>
 
       <DisclaimerBanner text={disclaimer} />
+
+      {reportId && <ReportChat reportId={reportId} />}
 
       <div className="result-grid">
         {results.map((result) => {

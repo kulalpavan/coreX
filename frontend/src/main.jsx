@@ -242,6 +242,7 @@ function App() {
               reportDate={reportDate}
               sourceText={sourceText}
               results={results}
+              reportId={reportId}
               onUpdate={handleUpdateResult}
               onAddRow={handleAddRow}
               onDeleteRow={handleDeleteRow}

@@ -596,6 +596,20 @@ td select:focus {
   gap: 18px;
   margin: 28px 0 36px;
 }
+.report-chat {
+  border: 1px solid #cbd8d1;
+  background: #edf4ef;
+  padding: 18px;
+  margin: 22px 0 28px;
+}
+.report-chat-heading { display: flex; gap: 10px; color: #155c51; align-items: flex-start; }
+.report-chat-heading div { display: grid; gap: 4px; }
+.report-chat-heading span { color: #687870; font-size: 11px; line-height: 1.5; }
+.report-chat-answer { white-space: pre-line; background: #fffdfa; border: 1px solid #d9e2dc; padding: 13px; margin-top: 14px; color: #465b52; font-size: 12px; line-height: 1.65; }
+.report-chat-form { display: flex; gap: 8px; margin-top: 13px; }
+.report-chat-form input { flex: 1; min-width: 0; border: 1px solid #b9c7bf; padding: 10px 12px; background: white; }
+.report-chat-form button { border: 0; background: #155c51; color: white; padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.report-chat-form button:disabled { opacity: .5; cursor: not-allowed; }
 .result-card {
   background: #ffffff;
   border: 1px solid #dfddd7;
