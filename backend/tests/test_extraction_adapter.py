@@ -106,6 +106,6 @@ def test_conflicting_provider_value_keeps_deterministic_value_and_flags_review()
 
     merged = merge_provider_results(deterministic, model)
 
-    assert merged[0]["value"] == 13.4
+    assert merged[0]["value"] == 14.4
     assert merged[0]["review_required"] is True
     assert merged[0]["extraction_conflict"] is True

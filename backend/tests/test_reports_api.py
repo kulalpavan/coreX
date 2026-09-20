@@ -8,10 +8,18 @@ from app.main import app, reports
 
 
 client = TestClient(app)
+AUTH_HEADERS = {}
+TEST_USER_ID = "u_testuser"
 
 
 def setup_function() -> None:
+    global AUTH_HEADERS, TEST_USER_ID
     reports.clear()
+    reg_res = client.post("/api/auth/register", json={"email": "testuser@example.com", "password": "password123"})
+    if reg_res.status_code == 200:
+        data = reg_res.json()
+        TEST_USER_ID = data["user"]["id"]
+        AUTH_HEADERS = {"Authorization": f"Bearer {data['access_token']}"}
 
 
 def confirmed_result(report_date: str, value: float, canonical_test_id: str = "hemoglobin") -> dict:
@@ -33,6 +41,7 @@ def create_report(report_date: str, value: float, status: str = "confirmed") -> 
     report_id = f"r_{report_date.replace('-', '')}"
     reports[report_id] = {
         "id": report_id,
+        "user_id": TEST_USER_ID,
         "filename": f"report-{report_date}.png",
         "source_type": "image",
         "patient_id": "p_demo",
@@ -50,7 +59,7 @@ def test_trends_include_only_confirmed_matching_results_in_date_order() -> None:
     other_id = create_report("2026-04-10", 15.0)
     reports[other_id]["results"][0]["canonical_test_id"] = "tsh"
 
-    response = client.get("/api/patients/p_demo/trends/hemoglobin")
+    response = client.get("/api/patients/p_demo/trends/hemoglobin", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     body = response.json()
@@ -66,7 +75,7 @@ def test_trends_include_only_confirmed_matching_results_in_date_order() -> None:
 def test_trends_report_insufficient_confirmed_data() -> None:
     create_report("2026-08-14", 13.8)
 
-    response = client.get("/api/patients/p_demo/trends/hemoglobin")
+    response = client.get("/api/patients/p_demo/trends/hemoglobin", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert response.json()["data"] == []
@@ -77,7 +86,7 @@ def test_export_returns_readable_pdf_with_confirmed_content_and_disclaimer() -> 
     report_id = create_report("2026-08-14", 13.8)
     reports[report_id]["results"][0]["explanation_text"] = "Hemoglobin is recorded as 13.8 g/dL. This is within the reported range."
 
-    response = client.post(f"/api/reports/{report_id}/export")
+    response = client.post(f"/api/reports/{report_id}/export", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -93,7 +102,7 @@ def test_export_returns_readable_pdf_with_confirmed_content_and_disclaimer() -> 
 def test_export_rejects_unconfirmed_report() -> None:
     report_id = create_report("2026-08-14", 13.8, status="pending_review")
 
-    response = client.post(f"/api/reports/{report_id}/export")
+    response = client.post(f"/api/reports/{report_id}/export", headers=AUTH_HEADERS)
 
     assert response.status_code == 409
 
@@ -103,7 +112,7 @@ def test_source_endpoint_returns_retained_extracted_text() -> None:
     reports[report_id]["raw_text"] = "Hemoglobin 13.8 g/dL"
     reports.save(reports[report_id])
 
-    response = client.get(f"/api/reports/{report_id}/source")
+    response = client.get(f"/api/reports/{report_id}/source", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert response.json()["raw_text"] == "Hemoglobin 13.8 g/dL"
@@ -116,7 +125,7 @@ def test_confirmation_rejects_invalid_reference_range() -> None:
         "reference_range_high": 12.0,
     }
 
-    response = client.post(f"/api/reports/{report_id}/confirm", json={"results": [invalid_result]})
+    response = client.post(f"/api/reports/{report_id}/confirm", json={"results": [invalid_result]}, headers=AUTH_HEADERS)
 
     assert response.status_code == 422
     assert reports[report_id]["status"] == "pending_review"
@@ -127,7 +136,7 @@ def test_delete_data_is_scoped_to_requested_patient() -> None:
     other_report = create_report("2026-08-15", 14.1)
     reports[other_report]["patient_id"] = "p_other"
 
-    response = client.delete("/api/patients/p_demo/data")
+    response = client.delete("/api/patients/p_demo/data", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert own_report not in reports
@@ -138,7 +147,9 @@ def test_corrupted_pdf_returns_actionable_error() -> None:
     response = client.post(
         "/api/reports/upload",
         files={"file": ("corrupt.pdf", b"not a pdf", "application/pdf")},
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 422
     assert "couldn't read" in response.json()["detail"].lower()
+

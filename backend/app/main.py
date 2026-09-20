@@ -8,10 +8,10 @@ from uuid import uuid4
 import re
 from io import BytesIO
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, model_validator
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -19,6 +19,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .auth import (
+    create_access_token,
+    get_current_user_from_token,
+    hash_password,
+    security_scheme,
+    verify_password,
+)
 from .explanations import explain_result
 from .extraction import ExtractionError, process_report
 from .clinical_chat import answer_question
@@ -40,15 +47,31 @@ def _file_extension(filename: str | None, content_type: str | None) -> str:
         return suffix
     return {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[content_type or ""]
 
-app = FastAPI(title="Clarify Labs API", version="0.1.0")
+app = FastAPI(title="Clarify Labs API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 reports = ReportStore()
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> dict[str, Any]:
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication token required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return get_current_user_from_token(credentials.credentials, reports)
+
+
+class AuthCredentials(BaseModel):
+    email: str
+    password: str
 
 
 class TestResult(BaseModel):
@@ -100,6 +123,8 @@ class ChatQuestion(BaseModel):
 def canonicalize_test_name(raw_name: str) -> str:
     normalized = " ".join(raw_name.casefold().split())
     return canonical_test_id(normalized) or normalized.replace(" ", "_")
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     ocr = get_ocr_status()
@@ -114,8 +139,78 @@ def health() -> dict[str, Any]:
     }
 
 
+# --- AUTH ENDPOINTS ---
+
+@app.post("/api/auth/register")
+def register(body: AuthCredentials) -> dict[str, Any]:
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "A valid email address is required.")
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters.")
+    user_id = f"u_{uuid4().hex[:8]}"
+    pwd_hash = hash_password(body.password)
+    try:
+        user = reports.create_user(user_id, email, pwd_hash)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    token = create_access_token(user["id"], user["email"])
+    return {
+        "user": {"id": user["id"], "email": user["email"]},
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
+@app.post("/api/auth/login")
+def login(body: AuthCredentials) -> dict[str, Any]:
+    email = body.email.strip().lower()
+    user = reports.get_user_by_email(email)
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password.")
+    token = create_access_token(user["id"], user["email"])
+    return {
+        "user": {"id": user["id"], "email": user["email"]},
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
+@app.get("/api/auth/me")
+def me(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    return {"id": current_user["id"], "email": current_user["email"], "created_at": current_user["created_at"]}
+
+
+@app.post("/api/auth/logout")
+def logout() -> dict[str, str]:
+    return {"status": "logged_out"}
+
+
+# --- REPORT ENDPOINTS ---
+
+@app.get("/api/reports")
+def list_user_reports(current_user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+    user_reports = reports.list_for_user(current_user["id"])
+    return [
+        {
+            "id": r["id"],
+            "filename": r["filename"],
+            "status": r["status"],
+            "created_at": r.get("created_at"),
+            "report_date": r.get("report_date"),
+            "patient_id": r.get("patient_id"),
+            "source_type": r.get("source_type"),
+            "test_count": len(r.get("results", [])),
+        }
+        for r in user_reports
+    ]
+
+
 @app.post("/api/reports/upload")
-async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
+async def upload_report(
+    file: UploadFile = File(...),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(400, "Upload a PDF, JPG, or PNG file.")
     payload = await file.read()
@@ -130,6 +225,7 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
         raise HTTPException(503, str(exc)) from exc
     reports.create({
         "id": report_id,
+        "user_id": current_user["id"],
         "filename": file.filename or "untitled-report",
         "source_type": processed["source_type"],
         "content_type": file.content_type,
@@ -150,8 +246,11 @@ async def upload_report(file: UploadFile = File(...)) -> dict[str, str]:
 
 
 @app.get("/api/reports/{report_id}/extraction")
-def get_extraction(report_id: str) -> dict[str, Any]:
-    report = reports.get(report_id)
+def get_extraction(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report:
         raise HTTPException(404, "Report not found.")
     return {
@@ -168,8 +267,11 @@ def get_extraction(report_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/reports/{report_id}/source")
-def get_source(report_id: str) -> dict[str, Any]:
-    report = reports.get(report_id)
+def get_source(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report:
         raise HTTPException(404, "Report not found.")
     return {
@@ -182,8 +284,11 @@ def get_source(report_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/reports/{report_id}/source-file")
-def get_source_file(report_id: str) -> FileResponse:
-    report = reports.get(report_id)
+def get_source_file(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> FileResponse:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report:
         raise HTTPException(404, "Report not found.")
     source_path = Path(report.get("raw_file_path", ""))
@@ -199,8 +304,12 @@ def get_source_file(report_id: str) -> FileResponse:
 
 
 @app.post("/api/reports/{report_id}/confirm")
-def confirm_report(report_id: str, body: Confirmation) -> dict[str, Any]:
-    report = reports.get(report_id)
+def confirm_report(
+    report_id: str,
+    body: Confirmation,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report:
         raise HTTPException(404, "Report not found.")
     report["results"] = [
@@ -219,29 +328,51 @@ def confirm_report(report_id: str, body: Confirmation) -> dict[str, Any]:
 
 
 @app.get("/api/reports/{report_id}/explanations")
-def get_explanations(report_id: str) -> dict[str, Any]:
-    report = reports.get(report_id)
+def get_explanations(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report or report["status"] != "confirmed":
         raise HTTPException(409, "Confirm the report before viewing explanations.")
     return {"report_id": report_id, "results": report["results"], "disclaimer": DISCLAIMER}
 
 
 @app.post("/api/reports/{report_id}/chat")
-def chat_about_report(report_id: str, body: ChatQuestion) -> dict[str, Any]:
-    report = reports.get(report_id)
+def chat_about_report(
+    report_id: str,
+    body: ChatQuestion,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report or report["status"] != "confirmed":
         raise HTTPException(409, "Confirm the report before asking questions about it.")
     return answer_question(body.question, body.history, report)
 
 
+@app.delete("/api/reports/{report_id}")
+def delete_report(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
+    deleted = reports.delete_for_user(report_id, current_user["id"])
+    if not deleted:
+        raise HTTPException(404, "Report not found.")
+    return {"status": "deleted", "report_id": report_id}
+
+
 @app.get("/api/patients/{patient_id}/trends/{canonical_test_id}")
-def get_trend(patient_id: str, canonical_test_id: str) -> dict[str, Any]:
+def get_trend(
+    patient_id: str,
+    canonical_test_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     target_id = canonicalize_test_name(canonical_test_id)
     points = []
     for report in reports.values():
-        if report["patient_id"] != patient_id or report["status"] != "confirmed":
+        if report.get("user_id") != current_user["id"] or report.get("patient_id") != patient_id or report.get("status") != "confirmed":
             continue
-        for result in report["results"]:
+        for result in report.get("results", []):
             result_id = result.get("canonical_test_id") or canonicalize_test_name(result["raw_test_name"])
             if result_id.lower() != target_id or result.get("value") is None or not result.get("report_date"):
                 continue
@@ -284,8 +415,11 @@ def _draw_disclaimer(canvas: Any, document: Any) -> None:
 
 
 @app.post("/api/reports/{report_id}/export")
-def export_report(report_id: str) -> StreamingResponse:
-    report = reports.get(report_id)
+def export_report(
+    report_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> StreamingResponse:
+    report = reports.get_for_user(report_id, current_user["id"])
     if not report:
         raise HTTPException(404, "Report not found.")
     if report["status"] != "confirmed":
@@ -342,6 +476,13 @@ def export_report(report_id: str) -> StreamingResponse:
 
 
 @app.delete("/api/patients/{patient_id}/data")
-def delete_data(patient_id: str) -> dict[str, str]:
-    reports.delete_patient(patient_id)
+def delete_data(
+    patient_id: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
+    # Delete patient reports owned by current user
+    user_reports = [r["id"] for r in reports.values() if r.get("user_id") == current_user["id"] and r.get("patient_id") == patient_id]
+    for r_id in user_reports:
+        del reports[r_id]
     return {"status": "deleted", "patient_id": patient_id}
+

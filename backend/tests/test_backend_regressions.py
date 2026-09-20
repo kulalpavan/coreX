@@ -7,15 +7,24 @@ from app.normalization import normalize_result
 
 
 client = TestClient(app)
+AUTH_HEADERS = {}
+TEST_USER_ID = "u_regtest"
 
 
 def setup_function() -> None:
+    global AUTH_HEADERS, TEST_USER_ID
     reports.clear()
+    reg_res = client.post("/api/auth/register", json={"email": "reguser@example.com", "password": "password123"})
+    if reg_res.status_code == 200:
+        data = reg_res.json()
+        TEST_USER_ID = data["user"]["id"]
+        AUTH_HEADERS = {"Authorization": f"Bearer {data['access_token']}"}
 
 
 def add_report(report_id: str, patient_id: str, status: str = "confirmed") -> None:
     reports[report_id] = {
         "id": report_id,
+        "user_id": TEST_USER_ID,
         "filename": f"{report_id}.png",
         "source_type": "image",
         "ocr_confidence": 0.9,
@@ -30,7 +39,7 @@ def test_delete_data_only_removes_requested_patient() -> None:
     add_report("report_a", "patient_a")
     add_report("report_b", "patient_b")
 
-    response = client.delete("/api/patients/patient_a/data")
+    response = client.delete("/api/patients/patient_a/data", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert "report_a" not in reports

@@ -71,7 +71,11 @@ def answer_question(question: str, history: list[Any], report: dict[str, Any]) -
         response = urllib.request.urlopen(req, timeout=20.0)
         data = json.loads(response.read().decode("utf-8"))
         answer = data["candidates"][0]["content"]["parts"][0]["text"]
-        return {"answer": answer, "disclaimer": CHAT_DISCLAIMER, "refused": False}
+        refused = any(
+            kw in answer.lower()
+            for kw in ["cannot diagnose", "cannot prescribe", "consult your clinician", "consult a licensed clinician", "refuse"]
+        ) or ("safe" in answer.lower() and "false" in answer.lower())
+        return {"answer": answer, "disclaimer": CHAT_DISCLAIMER, "refused": refused}
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8")
         return {"answer": f"API Error: {e.code} - {err_msg}", "disclaimer": CHAT_DISCLAIMER, "refused": True}

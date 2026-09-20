@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from urllib.request import Request, urlopen
+import urllib.error
+import time
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -101,9 +103,32 @@ class ExtractionRun:
 
 
 EXTRACTION_PROMPT = """Extract only laboratory test information from the report text.
-Return JSON matching the requested schema exactly. Do not diagnose, interpret, or invent values.
+Return a JSON object matching the following structure exactly. Do not diagnose, interpret, or invent values.
 Preserve values, units, and reference ranges. Use null when information is unavailable.
 Treat OCR text as corrupted; lower confidence when uncertain rather than guessing.
+
+EXPECTED JSON SCHEMA:
+{
+  "report_date": "YYYY-MM-DD" or null,
+  "tests": [
+    {
+      "test_name": "Name of the test",
+      "value": 123.45 (numeric) or null,
+      "unit": "g/dL" or null,
+      "flag": "H" or "L" or "normal" or null,
+      "reference_range": {
+        "low": 12.0 or null,
+        "high": 15.5 or null
+      } or null,
+      "confidence": {
+        "test_name": 0.9,
+        "value": 0.9,
+        "unit": 0.9,
+        "reference_range": 0.9
+      }
+    }
+  ]
+}
 
 Examples:
 1. Hemoglobin 13.4 g/dL 12.0 - 15.5 -> one Hemoglobin test with value 13.4.
@@ -166,9 +191,83 @@ def _parse_json_text(raw: str) -> dict[str, Any]:
     return value
 
 
-def provider_from_environment() -> LLMExtractionProvider | None:
+def _sanitize_for_api(text: str) -> str:
+    """Strip non-printable / non-ASCII control characters that cause Gemini 400 errors."""
+    # Keep normal ASCII printable + newline + tab; replace everything else with a space
+    sanitized = re.sub(r"[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]", " ", text)
+    # Collapse runs of whitespace but preserve newlines
+    sanitized = re.sub(r"[^\S\n]+", " ", sanitized)
+    return sanitized.strip()
+
+
+class GeminiExtractionProvider:
+    """Gemini native API JSON provider."""
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", timeout: float = 60.0) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
+
+    def extract(self, raw_text: str) -> dict[str, Any]:
+        # Sanitize OCR text to avoid Gemini 400 errors from control characters
+        sanitized = _sanitize_for_api(raw_text)
+        payload = {
+            "system_instruction": {"parts": [{"text": EXTRACTION_PROMPT}]},
+            "contents": [{"role": "user", "parts": [{"text": sanitized}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "response_mime_type": "application/json"
+            }
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        body = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        
+        max_retries = 3
+        backoff = 2.0
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response = urlopen(Request(url, data=body, headers=headers, method="POST"), timeout=self.timeout)
+                data = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    error_body = e.read().decode("utf-8")
+                    
+                    # Stop if Daily Free Tier Quota is completely exhausted
+                    if "GenerateRequestsPerDayPerProjectPerModel-FreeTier" in error_body:
+                        raise ValueError("Gemini daily free-tier quota exhausted. Will use deterministic fallback.")
+                        
+                    # Otherwise it's a temporary rate-limit, apply exponential backoff
+                    if attempt < max_retries:
+                        retry_after = e.headers.get("Retry-After")
+                        delay = float(retry_after) if retry_after else backoff
+                        time.sleep(delay)
+                        backoff *= 2
+                        continue
+                raise
+
+        try:
+            content = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            raise ValueError("Unexpected response format from Gemini")
+            
+        if isinstance(content, str):
+            content = _parse_json_text(content)
+        if not isinstance(content, dict):
+            raise ValueError("LLM response must be a JSON object")
+        return content
+
+
+def provider_from_environment() -> ModelExtractionProvider | None:
     token = os.getenv("LLM_EXTRACTION_TOKEN")
     endpoint = os.getenv("LLM_EXTRACTION_URL")
+    
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not token and not endpoint and gemini_key:
+        return GeminiExtractionProvider(gemini_key)
+        
     if not token and not endpoint:
         return None
     return LLMExtractionProvider(
@@ -252,23 +351,23 @@ def _candidate_key(candidate: dict[str, Any]) -> str:
 
 
 def merge_provider_results(deterministic: list[dict[str, Any]], model: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep deterministic values on conflict and surface the disagreement for review."""
-    model_by_key = {_candidate_key(item): item for item in model}
+    """Use model values, falling back to deterministic if the model missed a row."""
+    deterministic_by_key = {_candidate_key(item): item for item in deterministic}
     merged = []
-    for item in deterministic:
-        candidate = dict(item)
-        model_item = model_by_key.pop(_candidate_key(item), None)
-        if model_item:
+    for model_item in model:
+        candidate = dict(model_item)
+        det_item = deterministic_by_key.pop(_candidate_key(model_item), None)
+        if det_item:
             conflicts = any(
-                candidate.get(field) != model_item.get(field)
+                candidate.get(field) != det_item.get(field)
                 for field in ("value", "unit", "reference_range_low", "reference_range_high")
             )
             if conflicts:
                 candidate["review_required"] = True
                 candidate["extraction_conflict"] = True
         merged.append(candidate)
-    for item in model_by_key.values():
-        candidate = dict(item)
+    for det_item in deterministic_by_key.values():
+        candidate = dict(det_item)
         candidate["review_required"] = True
         candidate["extraction_conflict"] = True
         merged.append(candidate)
@@ -283,6 +382,15 @@ def _call_provider_with_retry(provider: ModelExtractionProvider, raw_text: str) 
             if isinstance(payload, str):
                 payload = _parse_json_text(payload)
             return validate_model_output(payload)
+        except urllib.error.HTTPError as error:
+            # Let HTTP errors (which couldn't be retried in the provider) bubble up immediately
+            raise error
+        except ValueError as error:
+            if "quota exhausted" in str(error):
+                raise error
+            last_error = error
+            if attempt == 0:
+                continue
         except Exception as error:
             last_error = error
             if attempt == 0:
@@ -290,18 +398,33 @@ def _call_provider_with_retry(provider: ModelExtractionProvider, raw_text: str) 
     raise last_error or ValueError("provider failed")
 
 
+def _reassign_ids(results: list[dict[str, Any]]) -> None:
+    """Reassign sequential unique IDs to avoid React key collisions after merge/dedup."""
+    for index, item in enumerate(results, 1):
+        item["id"] = f"result_{index}"
+
+
 def extract_report_results_with_metadata(raw_text: str, ocr_confidence: float | None = None) -> ExtractionRun:
-    deterministic = [normalize_result(item) for item in extract_candidates(raw_text, ocr_confidence)]
+    # NOTE: extract_candidates already calls normalize_result internally via _build_result.
+    # Do NOT call normalize_result again here — that would corrupt converted values.
+    deterministic = list(extract_candidates(raw_text, ocr_confidence))
     provider = provider_from_environment()
     if provider is None:
+        _reassign_ids(deterministic)
         return ExtractionRun(deterministic, "deterministic", False)
     try:
         model = structured_to_candidates(_call_provider_with_retry(provider, raw_text))
         merged = merge_provider_results(deterministic, model)
-        return ExtractionRun(merged, "openrouter", False)
+        _reassign_ids(merged)
+        provider_name = "gemini" if isinstance(provider, GeminiExtractionProvider) else "openrouter"
+        return ExtractionRun(merged, provider_name, False)
     except TimeoutError:
+        _reassign_ids(deterministic)
         return ExtractionRun(deterministic, "deterministic", True, "timeout")
     except (ValueError, TypeError, KeyError, OSError) as error:
+        import logging
+        logging.getLogger(__name__).warning("Extraction provider failed, using deterministic fallback: %s: %s", type(error).__name__, error)
+        _reassign_ids(deterministic)
         return ExtractionRun(deterministic, "deterministic", True, type(error).__name__.lower())
 
 
