@@ -38,4 +38,4 @@ The optional extraction provider is disabled by default. To use OpenRouter's fre
 
 ## Prototype boundaries
 
-The ingestion adapter uses direct PDF text extraction and Tesseract/PyMuPDF OCR when those local dependencies are available. The sample report is an explicit demo action, not an upload fallback. LLM extraction, authentication, cloud storage, and production privacy controls remain future work. This is not a certified medical device and does not provide diagnosis or treatment advice.
+The ingestion adapter uses direct PDF text extraction and Tesseract/PyMuPDF OCR when those local dependencies are available. The sample report is an explicit demo action, not an upload fallback. LLM extraction, cloud storage, and production privacy controls remain future work. This is not a certified medical device and does not provide diagnosis or treatment advice.
