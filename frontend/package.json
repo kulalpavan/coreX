@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
-  },
-  "devDependencies": {}
+    "recharts": "^3.10.1",
+    "typescript": "latest",
+    "vite": "latest"
+  }
 }

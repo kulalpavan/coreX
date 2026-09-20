@@ -1,65 +1,71 @@
 const API_URL = "http://localhost:8000";
 
+function getAuthHeaders(additionalHeaders = {}) {
+  const token = localStorage.getItem("token");
+  const headers = { ...additionalHeaders };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function checkHealth() {
   const response = await fetch(`${API_URL}/api/health`);
   if (!response.ok) throw new Error("Backend unavailable");
   return response.json();
 }
 
-export const sampleDemoResults = [
-  {
-    id: "demo_1",
-    raw_test_name: "Hemoglobin",
-    value: 13.8,
-    unit: "g/dL",
-    reference_range_low: 12.0,
-    reference_range_high: 15.5,
-    flag: "normal",
-    report_date: "2026-08-14",
-    extraction_confidence: 0.97,
-    user_corrected: false,
-    explanation_text: null,
-  },
-  {
-    id: "demo_2",
-    raw_test_name: "Total Cholesterol",
-    value: 214,
-    unit: "mg/dL",
-    reference_range_low: 0,
-    reference_range_high: 200,
-    flag: "H",
-    report_date: "2026-08-14",
-    extraction_confidence: 0.94,
-    user_corrected: false,
-    explanation_text: null,
-  },
-  {
-    id: "demo_3",
-    raw_test_name: "TSH",
-    value: 2.4,
-    unit: "mIU/L",
-    reference_range_low: 0.4,
-    reference_range_high: 4.0,
-    flag: "normal",
-    report_date: "2026-08-14",
-    extraction_confidence: 0.88,
-    user_corrected: false,
-    explanation_text: null,
-  },
-  {
-    id: "demo_4",
-    raw_test_name: "ALT",
-    value: 31,
-    unit: "U/L",
-    reference_range_low: 7,
-    reference_range_high: 56,
-    flag: "normal",
-    report_date: "2026-08-14",
-    extraction_confidence: 0.72,
-    user_corrected: false,
-    explanation_text: null,
-  },
-];
+// --- Auth API ---
+
+export async function registerApi(email, password) {
+  const response = await fetch(`${API_URL}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "Registration failed.");
+  return data;
+}
+
+export async function loginApi(email, password) {
+  const response = await fetch(`${API_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "Login failed.");
+  return data;
+}
+
+export async function meApi() {
+  const response = await fetch(`${API_URL}/api/auth/me`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error("Session expired or invalid.");
+  return response.json();
+}
+
+export async function logoutApi() {
+  await fetch(`${API_URL}/api/auth/logout`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  }).catch(() => {});
+}
+
+// --- Reports API ---
+
+export async function listUserReports() {
+  const response = await fetch(`${API_URL}/api/reports`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load user reports.");
+  }
+  return response.json();
+}
 
 export async function uploadReport(file) {
   if (!file) throw new Error("No file provided.");
@@ -68,6 +74,7 @@ export async function uploadReport(file) {
 
   const response = await fetch(`${API_URL}/api/reports/upload`, {
     method: "POST",
+    headers: getAuthHeaders(),
     body: formData,
   });
 
@@ -79,7 +86,9 @@ export async function uploadReport(file) {
 }
 
 export async function getExtraction(reportId) {
-  const response = await fetch(`${API_URL}/api/reports/${reportId}/extraction`);
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/extraction`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to retrieve extraction results.");
@@ -88,7 +97,9 @@ export async function getExtraction(reportId) {
 }
 
 export async function getSource(reportId) {
-  const response = await fetch(`${API_URL}/api/reports/${reportId}/source`);
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/source`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to retrieve source text.");
@@ -97,13 +108,22 @@ export async function getSource(reportId) {
 }
 
 export function getSourceFileUrl(reportId) {
+  const token = localStorage.getItem("token") || "";
   return `${API_URL}/api/reports/${reportId}/source-file`;
+}
+
+export async function fetchSourceFileBlob(reportId) {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/source-file`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error("Could not fetch source document.");
+  return response.blob();
 }
 
 export async function confirmReport(reportId, results) {
   const response = await fetch(`${API_URL}/api/reports/${reportId}/confirm`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ results }),
   });
   if (!response.ok) {
@@ -114,7 +134,9 @@ export async function confirmReport(reportId, results) {
 }
 
 export async function getExplanations(reportId) {
-  const response = await fetch(`${API_URL}/api/reports/${reportId}/explanations`);
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/explanations`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to fetch report explanations.");
@@ -125,7 +147,7 @@ export async function getExplanations(reportId) {
 export async function askReportQuestion(reportId, question, history = []) {
   const response = await fetch(`${API_URL}/api/reports/${reportId}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ question, history }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -133,8 +155,23 @@ export async function askReportQuestion(reportId, question, history = []) {
   return payload;
 }
 
+export async function deleteReportApi(reportId) {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to delete report.");
+  }
+  return response.json();
+}
+
 export async function getTrends(patientId = "p_demo", canonicalTestId = "Hemoglobin") {
-  const response = await fetch(`${API_URL}/api/patients/${patientId}/trends/${encodeURIComponent(canonicalTestId)}`);
+  const response = await fetch(
+    `${API_URL}/api/patients/${patientId}/trends/${encodeURIComponent(canonicalTestId)}`,
+    { headers: getAuthHeaders() }
+  );
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || `Failed to load trends with status ${response.status}`);
@@ -146,7 +183,10 @@ export async function exportPdf(reportId) {
   if (!reportId) {
     throw new Error("Export is available after a report has been uploaded and confirmed.");
   }
-  const response = await fetch(`${API_URL}/api/reports/${reportId}/export`, { method: "POST" });
+  const response = await fetch(`${API_URL}/api/reports/${reportId}/export`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || `PDF export failed with status ${response.status}`);
@@ -162,6 +202,7 @@ export async function deletePatientData(patientId = "p_demo") {
   try {
     const response = await fetch(`${API_URL}/api/patients/${patientId}/data`, {
       method: "DELETE",
+      headers: getAuthHeaders(),
     });
     if (response.ok) return await response.json();
   } catch (err) {
@@ -169,3 +210,4 @@ export async function deletePatientData(patientId = "p_demo") {
   }
   return { status: "deleted", patient_id: patientId };
 }
+
